@@ -2,7 +2,6 @@ import 'dotenv/config';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Client, Collection, Events, GatewayIntentBits, MessageFlags } from 'discord.js';
-import { stringify } from 'querystring';
 import { ExtendedClient } from './ExtendedClient';
 
 const client = new ExtendedClient();

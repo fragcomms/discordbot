@@ -8,8 +8,7 @@
     "build": "tsc",
     "start": "node .",
     "clean": "rm -r dist/",
-    "lint:ts": "eslint src/ --ext .ts,.tsx --fix",
-    "lint:js": "eslint dist/ --ext .js --fix"
+    "lint:ts": "eslint src/ --ext .ts,.tsx --fix"
   },
   "keywords": [],
   "author": "",

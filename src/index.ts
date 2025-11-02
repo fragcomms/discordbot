@@ -36,6 +36,7 @@ const eventFiles = fs.readdirSync(eventsPath) // list of things inside 'events' 
 for (const file of eventFiles) {
   const filePath = path.join(eventsPath, file)
   const event = await import(filePath)
+  console.log(`Loading event: ${event.name} from ${file}`)
   if (event.once) {
     client.once(event.name, (...args) => event.execute(...args))
   } else {

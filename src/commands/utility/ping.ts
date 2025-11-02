@@ -7,9 +7,3 @@ async function execute (interaction: ChatInputCommandInteraction) {
 }
 
 export { data, execute }
-// module.exports = {
-// 	data: new SlashCommandBuilder().setName('ping').setDescription('Replies with pong!'),
-// 	async execute(interaction: ChatInputCommandInteraction) {
-// 		await interaction.reply('Pong!');
-// 	},
-// };

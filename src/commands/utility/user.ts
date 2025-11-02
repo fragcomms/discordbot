@@ -1,8 +1,8 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, GuildMember, Guild } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, GuildMember } from 'discord.js';
 
-export const data = new SlashCommandBuilder().setName('user').setDescription('Provides information about the user.')
-export async function execute(interaction: ChatInputCommandInteraction) {
-  if (interaction.inCachedGuild()) {
+const data = new SlashCommandBuilder().setName('user').setDescription('Provides information about the user.')
+async function execute(interaction: ChatInputCommandInteraction) {
+  if (!interaction.inCachedGuild()) {
     await interaction.reply('Use this bot in discord servers only!')
     return
   }
@@ -12,7 +12,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.reply(`This command was run by ${interaction.user.username}, who joined on ${member.joinedAt?.toDateString()}`)
 }
 
-
+export { data, execute }
 
 // module.exports = {
 // 	data: new SlashCommandBuilder().setName('user').setDescription('Provides information about the user.'),

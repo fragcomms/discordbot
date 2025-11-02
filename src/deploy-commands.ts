@@ -1,5 +1,4 @@
-import { REST } from '@discordjs/rest'
-import { Routes } from 'discord-api-types/v10'
+import { REST, Routes } from 'discord.js'
 import 'dotenv/config'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -15,7 +14,7 @@ const commandFolders = fs.readdirSync(foldersPath)
 
 for (const folder of commandFolders) {
   const commandsPath = path.join(foldersPath, folder)
-  const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.ts'))
+  const commandFiles = fs.readdirSync(commandsPath).filter((file) => /\.(js|ts)$/.test(file))
   for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file)
     const command = await import(filePath)

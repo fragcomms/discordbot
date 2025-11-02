@@ -1,8 +1,8 @@
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import type { Command } from './types/Command.ts'
 
-export class ExtendedClient extends Client {
-	public commands: Collection<string, Command>
+class ExtendedClient extends Client {
+	commands: Collection<string, Command>
 
 	constructor() {
 		super({ intents: [
@@ -12,3 +12,5 @@ export class ExtendedClient extends Client {
     this.commands = new Collection
 	}
 }
+
+export { ExtendedClient }

@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, GuildMember } from 'discord.js';
 
 const data = new SlashCommandBuilder().setName('user').setDescription('Provides information about the user.')
+
 async function execute(interaction: ChatInputCommandInteraction) {
   if (!interaction.inCachedGuild()) {
     await interaction.reply('Use this bot in discord servers only!')

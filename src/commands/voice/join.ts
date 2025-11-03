@@ -1,32 +1,33 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ChatInputCommandInteraction, SlashCommandBuilder, GuildMember, GatewayIntentBits, Client, InteractionCallback } from "discord.js";
+import { ChatInputCommandInteraction, SlashCommandBuilder, GuildMember, GatewayIntentBits, Client, InteractionCallback, VoiceBasedChannel, IntegrationApplication } from "discord.js";
 import { joinVoiceChannel, getVoiceConnection } from '@discordjs/voice'
 
 const data = new SlashCommandBuilder().setName('join').setDescription('Allows the bot to join the same channel as the user.');
 
 async function execute(interaction: ChatInputCommandInteraction) {
-  const member = interaction.member as GuildMember;
-  const channel = member.voice?.channel;
-
-  if (!channel) { 
-    await interaction.reply('Use this command when you are in a voice channel!')
+  if (!interaction.inCachedGuild()) {
+    await interaction.reply('Use this bot in discord servers only!')
     return
-   }
-
-  const alreadyConnected = getVoiceConnection(channel.guild.id);
-  if (alreadyConnected) {
-    alreadyConnected.destroy();
   }
-
-  joinVoiceChannel({
-    adapterCreator: channel.guild.voiceAdapterCreator,
-    channelId: channel.id,
-    guildId: channel.guild.id,
-    selfDeaf: false
+  if (!interaction.member.voice.channel) {
+    await interaction.reply('Join a voice channel and try again!')
+    return
+  }
+  let connection = await getVoiceConnection(interaction.guildId)
+  if (connection) {
+    console.log(`Destroying ${interaction.member.voice.channelId}`)
+    connection.destroy()
+  }
+  connection = await joinVoiceChannel({
+    adapterCreator: interaction.guild.voiceAdapterCreator,
+    channelId: interaction.member.voice.channel.id,
+    guildId: interaction.guild.id,
+    selfDeaf: false,
+    selfMute: true
   });
 
-  console.log(`joined ${channel.name}, id: ${channel.id}`);
-
+  console.log(`joined ${interaction.member.voice.channel!.name}, id: ${interaction.member.voice.channelId}`);
+  await interaction.reply(`Joined ${interaction.member.voice.channel!.name}`)
 }
 
 export { data, execute }

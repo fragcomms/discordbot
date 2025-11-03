@@ -12,7 +12,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   try {
-    console.log(interaction)
+    // console.log(interaction)
     await command.execute(interaction)
   } catch (error) {
     console.error(error)

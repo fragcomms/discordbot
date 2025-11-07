@@ -1,5 +1,5 @@
 import { Events, MessageFlags, ChatInputCommandInteraction } from 'discord.js'
-import { ExtendedClient } from '../ExtendedClient.js'
+import { ExtendedClient } from '../types/ExtendedClient.js'
 
 const name = Events.InteractionCreate
 async function execute(interaction: ChatInputCommandInteraction) {

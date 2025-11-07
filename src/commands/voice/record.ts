@@ -1,14 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // clean these imports after fully functional command
 import { SlashCommandBuilder, ChatInputCommandInteraction, ButtonBuilder, ButtonStyle, User } from "discord.js";
-import { pipeline } from 'node:stream/promises'
 import { EndBehaviorType, getVoiceConnection, VoiceReceiver } from '@discordjs/voice'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as prism from 'prism-media'
-import { fileURLToPath } from "node:url";
-import { exec } from 'child_process'
-import { ChildProcess } from "node:child_process";
+import { fileURLToPath } from "node:url"
+import { spawn } from 'child_process'
+import ffmpeg from "ffmpeg-static";
+
+const ffmpegPath = ffmpeg as unknown as string
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -42,8 +43,7 @@ async function createListeningStream(receiver: VoiceReceiver, user: User) {
   const opusStream = receiver.subscribe(user.id, {
     end: {
       //TODO: add a manual stop record because inactivity is individual, not the whole group
-      behavior: EndBehaviorType.AfterInactivity,
-      duration: 10000
+      behavior: EndBehaviorType.Manual
     },
   })
   // converts raw packets to have the format of an audio file
@@ -65,18 +65,38 @@ async function createListeningStream(receiver: VoiceReceiver, user: User) {
   // end of stream
   opusStream.on('end', () => {
     console.log(`Finished recording ${user.username} to ${filePath}`)
-    
+
     const wavPath = filePath.replace(/\.pcm$/, '.wav')
-    // conversion of file to .wav
-    //TODO: make ffmpeg not cut the NULL packets
-    const cmd = `ffmpeg -f s16le -ar 48k -ac 2 -i "${filePath}" "${wavPath}"`
-    exec(cmd, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`FFmpeg failed for ${user.username}: `, stderr)
+    // grabs ffmpeg path and runs this
+    const ffmpegProcess = spawn(ffmpegPath, [
+      '-f', 's16le', '-ar', '48k', '-ac', '2', '-i', filePath, wavPath,
+    ])
+
+    // exports the output to console
+    ffmpegProcess.stderr.on('data', (data) => {
+      console.log(`[ffmpeg] ${data}`)
+    })
+
+    // once it's finished, see if theres an error
+    ffmpegProcess.on('close', (code) => {
+      if (code === 0) {
+        console.log(`Success: ${wavPath}`)
+        path.resolve()
+      } else {
+        console.error(`ffmpeg exited with code ${code}`)
         return
       }
-      console.log(`Converted ${user.username}'s recording to .wav`)
     })
+    // // conversion of file to .wav
+    // //TODO: make ffmpeg not cut the NULL packets
+    // const cmd = `ffmpeg -f s16le -ar 48k -ac 2 -i "${filePath}" "${wavPath}"`
+    // exec(cmd, (error, stdout, stderr) => {
+    //   if (error) {
+    //     console.error(`FFmpeg failed for ${user.username}: `, stderr)
+    //     return
+    //   }
+    //   console.log(`Converted ${user.username}'s recording to .wav`)
+    // })
   })
 }
 

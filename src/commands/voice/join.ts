@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+//TODO: clean imports after finish
 import { ChatInputCommandInteraction, SlashCommandBuilder, GuildMember, GatewayIntentBits, Client, InteractionCallback, VoiceBasedChannel } from "discord.js";
 import { joinVoiceChannel, getVoiceConnection } from '@discordjs/voice'
 

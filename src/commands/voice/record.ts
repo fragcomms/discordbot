@@ -1,13 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // clean these imports after fully functional command
-import { SlashCommandBuilder, ChatInputCommandInteraction, ButtonBuilder, ButtonStyle, User } from "discord.js";
+import { SlashCommandBuilder, ChatInputCommandInteraction, ButtonBuilder, ButtonStyle, User, MembershipScreeningFieldType, GuildMember, InteractionCallback, Guild, VoiceChannel } from "discord.js";
 import { EndBehaviorType, getVoiceConnection, VoiceReceiver } from '@discordjs/voice'
+import { recordings, Recording, logRecordingsState } from "../../utils/recordings.js";
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as prism from 'prism-media'
 import { fileURLToPath } from "node:url"
-import { spawn } from 'child_process'
-import ffmpeg from "ffmpeg-static";
+import { spawn, exec} from 'child_process'
+import ffmpeg from 'ffmpeg-static'
+import { OpusStream } from "prism-media/typings/opus.js";
+import { Channel, channel } from "node:diagnostics_channel";
+
 
 const ffmpegPath = ffmpeg as unknown as string
 
@@ -38,7 +42,7 @@ const data = new SlashCommandBuilder()
     .setDescription('User to be recorded'))
 
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
-async function createListeningStream(receiver: VoiceReceiver, user: User) {
+async function createListeningStream(receiver: VoiceReceiver, user: User, guildId : string) {
   // creates a listener on the user, raw packets atm
   const opusStream = receiver.subscribe(user.id, {
     end: {
@@ -61,6 +65,28 @@ async function createListeningStream(receiver: VoiceReceiver, user: User) {
   const outputStream = fs.createWriteStream(filePath)
 
   opusStream.pipe(decoder).pipe(outputStream)
+
+
+
+  // store the recording object in the recordings map
+    const rec : Recording = {
+    opusStream,
+    filePath,
+    user,
+    }
+
+    if(!recordings.has(guildId)) {
+      recordings.set(guildId, []);
+    }
+
+    recordings.get(guildId)!.push(rec);
+
+    //log in console
+    console.log(`Started recording ${user.username}`);
+    logRecordingsState();  
+
+  
+
 
   // end of stream
   opusStream.on('end', () => {
@@ -120,10 +146,13 @@ async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.reply(`Recording users: \n${users.map(u => `<@${u.id}>`).join(',\n')}`)
 
   const receiver = getVoiceConnection(interaction.guildId)!.receiver
+  
 
+  // for each user, create a listening stream
   for (const user of users) {
     console.log(`Listening to ${user.username}`)
-    createListeningStream(receiver, user)
+    createListeningStream(receiver, user, interaction.guildId!);
+
   }
 }
 

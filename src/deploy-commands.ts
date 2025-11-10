@@ -28,12 +28,40 @@ for (const folder of commandFolders) {
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN!);
 
-(async () => {
-  try {
-    console.log(`Started refreshing ${commands.length} application (/) commands.`)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const data = await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID!, process.env.GUILD_ID!), { body: commands })
-  } catch (error) {
-    console.error(error)
+export async function refreshCommands() {
+  if (process.env.NODE_ENV === 'development') {
+    (async () => {
+      try {
+        console.log(`Started refreshing ${commands.length} application (/) commands LOCALLY.`)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const data = await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID!, process.env.GUILD_ID!), { body: commands })
+      } catch (error) {
+        console.error(error)
+      }
+    })()
+  } else if (process.env.NODE_ENV === 'production') {
+    (async () => {
+      try {
+        console.log(`Started refreshing ${commands.length} application (/) commands GLOBALLY.`)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const data = await rest.put(Routes.applicationCommands(process.env.CLIENT_ID!), { body: commands })
+      } catch (error) {
+        console.error(error)
+      }
+    })()
+  } else if (process.env.NODE_ENV === 'reset'){
+    (async () => {
+      try {
+        console.log(`Removing all GLOBAL commands.`)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const data = await rest.put(Routes.applicationCommands(process.env.CLIENT_ID!), { body: [] })
+      } catch (error) {
+        console.error(error)
+      }
+    })()
+  } else {
+    console.log("incorrect node environment, try again")
   }
-})()
+}
+
+refreshCommands()

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ChatInputCommandInteraction, SlashCommandBuilder, GuildMember, GatewayIntentBits, Client, InteractionCallback, VoiceBasedChannel } from "discord.js";
 import { getVoiceConnection } from '@discordjs/voice'
+import { recordings } from "../utility/recordings.js";
 
 const data = new SlashCommandBuilder()
   .setName('leave')
@@ -19,6 +20,9 @@ async function execute(interaction: ChatInputCommandInteraction) {
     await interaction.reply('I am not in a voice channel!')
     return
   }
+
+  //TODO: stop recording after told to leave
+
   connection.destroy()
   console.log(`Destroying ${channel.id}`)
   await interaction.reply(`Successfully disconnected from ${channel.name}.`)

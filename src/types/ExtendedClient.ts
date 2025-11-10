@@ -2,10 +2,9 @@ import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import type { Command } from './Command.js'
 
 // discordjs doesn't have "commands", typescript requires that
-// this extendedclient exist purely because of "commands" - aaron
+// this extendedclient exists purely because of "commands" - aaron
 class ExtendedClient extends Client {
 	commands: Collection<string, Command>
-
 	constructor() {
 		super({ intents: [
       GatewayIntentBits.Guilds,

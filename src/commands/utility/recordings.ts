@@ -1,13 +1,13 @@
 // NOT A SLASH COMMAND, IT HOLDS THE recording object that /record and /stop-recording use
+import { AudioReceiveStream } from '@discordjs/voice';
 import {User,} from 'discord.js'
 import ffmpeg from 'ffmpeg-static'
-import { OpusStream } from 'prism-media/typings/opus.js'
+// import { OpusStream } from 'prism-media/typings/opus.js'
 
 export interface Recording {
-    opusStream: OpusStream;
+    opusStream: AudioReceiveStream;
     filePath: string;   // filePath
     user: User;         // User object 
-    
 }
 
 export function logRecordingsState() {
@@ -22,8 +22,6 @@ export function logRecordingsState() {
   }
   console.log("──────────────────────────────\n");
 }
-
-
 
 // // stop all recordings (in case bot disconnects/crashes)
 // export async function stopRecordings(guildId: string) { 

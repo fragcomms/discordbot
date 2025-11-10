@@ -81,7 +81,14 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: strin
     await padPcmFile(value, maxSize)
     ffmpegArgs.push('-map', `${index}:a`)
   }
-  ffmpegArgs.push('-c:a', 'pcm_s16le', outputPath)
+  ffmpegArgs.push(
+    '-c:a', 'libopus', 
+    '-b:a', '20k', 
+    '-frame_duration', '60',
+    '-compression_level', '10',
+    '-vbr', 'on', 
+    '-application', 'voip',
+    '-ac', '1', outputPath)
 
   return new Promise<string>((resolve, reject) => {
     const ffmpeg = spawn(`${ffmpegPath}`, ffmpegArgs)

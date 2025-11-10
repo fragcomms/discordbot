@@ -1,14 +1,13 @@
 import { Events, Client, TextChannel } from 'discord.js'
 import { generateDependencyReport } from '@discordjs/voice'
 
-
 const name = Events.ClientReady
 const once = true
 async function execute(client: Client) {
   console.log(`Ready! Logged in as ${client.user?.tag}`)
   console.log(generateDependencyReport());
   const guild = await client.guilds.fetch(process.env.GUILD_ID!)
-  console.log(`Found ${guild}`)
+  console.log(`Found ${guild.name}`)
   const channel = client.channels.cache.get(process.env.CHANNEL_ID!)
   if (channel instanceof TextChannel) {
     console.log(`Found ${channel.name}`)

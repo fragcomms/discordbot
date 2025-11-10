@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // NOT A SLASH COMMAND, IT HOLDS THE recording object that /record and /stop-recording use
 import { AudioReceiveStream } from '@discordjs/voice';
-import {User,} from 'discord.js'
+import { User } from 'discord.js'
 import ffmpeg from 'ffmpeg-static'
 // import { OpusStream } from 'prism-media/typings/opus.js'
 
@@ -8,6 +9,7 @@ export interface Recording {
     opusStream: AudioReceiveStream;
     filePath: string;   // filePath
     user: User;         // User object 
+    timestamp: string;
 }
 
 export function logRecordingsState() {

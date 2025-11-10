@@ -1,0 +1,1 @@
+//TODO: stop recording when bot is force disconnected, this should be done for everything

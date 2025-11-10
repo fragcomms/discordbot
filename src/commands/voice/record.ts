@@ -12,7 +12,6 @@ import ffmpeg from 'ffmpeg-static'
 import { OpusStream } from 'prism-media/typings/opus.js';
 import { Channel, channel } from 'node:diagnostics_channel';
 
-
 const ffmpegPath = ffmpeg as unknown as string
 
 const __filename = fileURLToPath(import.meta.url)
@@ -42,7 +41,7 @@ const data = new SlashCommandBuilder()
     .setDescription('User to be recorded'))
 
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
-async function createListeningStream(receiver: VoiceReceiver, user: User, guildId: string) {
+async function createListeningStream(receiver: VoiceReceiver, user: User, guildId: string, channelId: string, datenow: string) {
   // creates a listener on the user, raw packets atm
   const opusStream = receiver.subscribe(user.id, {
     end: {
@@ -59,24 +58,45 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
 
   // root directory
   // this can be replaced by a database insertion once its finished
-  const dataDir = path.join(path.join(process.cwd(), 'data'), user.id)
+  const dataDir = path.join(process.cwd(), 'data', guildId, channelId, user.id)
   fs.mkdirSync(dataDir, { recursive: true })
 
-  const filePath = path.join(dataDir, `${Date.now()}.pcm`)
+  const filePath = path.join(dataDir, `${datenow}.pcm`)
   const outputStream = fs.createWriteStream(filePath)
+
+  // silence gap adder
+  let lastPacketTime = Number(datenow)
+  opusStream.on('data', () => {
+    const now = Date.now()
+    const delta = now - lastPacketTime
+
+    // each frame is 20ms of audio at 48kHz
+    const missingFrames = Math.floor(delta / 20) - 1
+    if (missingFrames > 0) {
+      // 960 * 2 bytes/sample * 2 channels
+      const silence = Buffer.alloc(missingFrames * 960 * 2 * 2, 0)
+      outputStream.write(silence)
+    }
+    lastPacketTime = now
+  })
 
   opusStream.pipe(decoder).pipe(outputStream)
 
   // store the recording object in the recordings map
+  //TODO: unsure
   const rec: Recording = {
     opusStream,
     filePath,
     user,
+    timestamp: datenow,
   }
 
   if (!recordings.has(guildId)) {
     recordings.set(guildId, []);
   }
+  // if (!recordings.has(channelId)) {
+  //   recordings.set(channelId, [])
+  // }
 
   recordings.get(guildId)!.push(rec);
 
@@ -120,6 +140,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
     await interaction.reply('I am not in a voice channel!')
     return
   }
+  //TODO: add error checking if user has already started a recording in the channel
   // grab all users that were given in command
   const userOptionNames = Array.from({ length: 6 }, (_, i) => `user${i + 1}`)
   const users = userOptionNames
@@ -132,9 +153,10 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const receiver = getVoiceConnection(interaction.guildId)!.receiver
 
   // for each user, create a listening stream
+  const datenow = Date.now()// required to make all recordings have same UNIX time
   for (const user of users) {
     console.log(`Listening to ${user.username}`)
-    createListeningStream(receiver, user, interaction.guildId!);
+    createListeningStream(receiver, user, interaction.guildId, interaction.guild.members.me.voice.channel.id, datenow.toString());
   }
 }
 

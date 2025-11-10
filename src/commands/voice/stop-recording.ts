@@ -1,9 +1,11 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { SlashCommandBuilder, ChatInputCommandInteraction } from "discord.js";
 import fs from "fs";
 import { exec } from "child_process";
 import { recordings, Recording } from '../utility/recordings.js';
-import { convertPcmToWav } from '../utility/audio-conversion.js';
+import { convertMultiplePcmToMka, convertPcmToWav } from '../utility/audio-conversion.js';
 import ffmpeg from 'ffmpeg-static'
+import path from "path";
 
 const data = new SlashCommandBuilder()
   .setName('stop-recording')
@@ -18,6 +20,11 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId!;
   const guildRecordings = recordings.get(guildId);
 
+  //TODO: check if user is in a channel that is currently recording
+  if (!interaction.member.voice.channel) {
+    await interaction.reply('Join the specific voice channel to stop recording!')
+  }
+
   if (!guildRecordings || guildRecordings.length == 0) {
     await interaction.reply('Not currently recording.');
     return;
@@ -26,7 +33,6 @@ async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.reply('Stopping recording, processing files...');
 
   //STOP AND PROCESS ALL ACTIVE RECORDINGS
-
   for (const recording of guildRecordings) {       // iterate through all active recordings
     try {
       recording.opusStream.destroy();     // stop the stream
@@ -42,8 +48,13 @@ async function execute(interaction: ChatInputCommandInteraction) {
       await interaction.followUp(`Could not stop recording for ${recording.user.username}:`);
     }
   }
+  const wavPath = await convertMultiplePcmToMka(path.join(process.cwd(), 'data', guildId), guildRecordings[0].timestamp)
+  await interaction.followUp({
+    content: `Compiled all user's recordings to one.`,
+    files: [wavPath]
+  })
 
-  recordings.delete(guildId)
+  recordings.delete(guildId) // delete once finished, we don't need to keep old streams
 }
 
 export { data, execute };

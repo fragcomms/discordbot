@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ChatInputCommandInteraction, SlashCommandBuilder, GuildMember, GatewayIntentBits, Client, InteractionCallback, VoiceBasedChannel } from "discord.js";
+import { ChatInputCommandInteraction, SlashCommandBuilder, VoiceBasedChannel } from "discord.js";
 import { getVoiceConnection } from '@discordjs/voice'
-import { recordings } from "../utility/recordings.js";
+
 
 const data = new SlashCommandBuilder()
   .setName('leave')
@@ -22,6 +22,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   //TODO: stop recording after told to leave
+  //DONE: stop recording after told to leave handled in /join
 
   connection.destroy()
   console.log(`Destroying ${channel.id}`)

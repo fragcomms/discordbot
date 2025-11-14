@@ -1,6 +1,6 @@
 //TODO: stop recording when bot is force disconnected, this should be done for everything
-import { recordings, Recording } from "../commands/utility/recordings.js";
-import { convertMultiplePcmToMka, convertPcmToWav } from "../commands/utility/audio-conversion.js";
+import { recordings } from "../commands/utility/recordings.js";
+import { convertMultiplePcmToMka } from "../commands/utility/audio-conversion.js";
 import path from "path";
 import { Client, TextChannel } from "discord.js";
 
@@ -20,7 +20,7 @@ export async function sendMessage(client: Client, channelId: string, msg: string
 }
 
 
-export async function disconnectProcess(guildId : string, channelId: string, client: Client) {
+export async function cleanUpProcess(guildId : string, channelId: string, client: Client) {
 
     const guildRecordings = recordings.get(guildId);
     if (!guildRecordings || guildRecordings.length == 0) {

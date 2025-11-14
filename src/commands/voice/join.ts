@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 //TODO: clean imports after finish
 import { ChatInputCommandInteraction, SlashCommandBuilder, GuildMember, GatewayIntentBits, Client, InteractionCallback, VoiceBasedChannel } from "discord.js";
-import { joinVoiceChannel, getVoiceConnection } from '@discordjs/voice'
+import { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } from '@discordjs/voice'
+import { disconnectProcess} from '../../events/disconnect.js';
 
 const data = new SlashCommandBuilder().setName('join').setDescription('Allows the bot to join the same channel as the user.');
 
@@ -26,6 +27,20 @@ async function execute(interaction: ChatInputCommandInteraction) {
     selfDeaf: false,
     selfMute: true
   });
+
+
+  // LISTEN FOR DISCONNECTS
+  connection.on("stateChange", (oldState, newState) => {
+
+    if(newState.status === VoiceConnectionStatus.Disconnected ||
+      newState.status === VoiceConnectionStatus.Destroyed) {
+      console.log(`Disconnect logged from voice channel in guild ${interaction.guildId}`);
+      // todo: test disconnectProcess
+      disconnectProcess(interaction.guildId!, interaction.channelId!, interaction.client);
+      }
+
+  })
+
 
   console.log(`joined ${interaction.member.voice.channel.name}, id: ${interaction.member.voice.channelId}`);
   await interaction.reply(`Joined ${interaction.member.voice.channel.name}`)

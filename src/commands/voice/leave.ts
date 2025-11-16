@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ChatInputCommandInteraction, SlashCommandBuilder, VoiceBasedChannel } from "discord.js";
 import { getVoiceConnection } from '@discordjs/voice'
+import { cleanOldDataFiles } from "../utility/cleanup.js";
 
 
 const data = new SlashCommandBuilder()
@@ -27,6 +28,12 @@ async function execute(interaction: ChatInputCommandInteraction) {
   connection.destroy()
   console.log(`Destroying ${channel.id}`)
   await interaction.reply(`Successfully disconnected from ${channel.name}.`)
+
+  //testing data file cleanup
+  //can go elsewhere later, possibly in index.ts
+  cleanOldDataFiles("data", ".pcm");
+  cleanOldDataFiles("data", ".mka");
+  cleanOldDataFiles("data", ".wav");
 }
 
 export { data, execute }

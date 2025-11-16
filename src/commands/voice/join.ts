@@ -2,7 +2,7 @@
 //TODO: clean imports after finish
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } from '@discordjs/voice'
-import { cleanUpProcess} from '../../events/disconnect.js';
+import { cleanUpProcess} from '../utility/cleanup.js';
 
 const data = new SlashCommandBuilder().setName('join').setDescription('Allows the bot to join the same channel as the user.');
 

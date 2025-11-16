@@ -83,7 +83,6 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   opusStream.pipe(decoder).pipe(outputStream)
 
   // store the recording object in the recordings map
-  //TODO: unsure
   const rec: Recording = {
     opusStream,
     filePath,
@@ -94,52 +93,44 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   if (!recordings.has(guildId)) {
     recordings.set(guildId, []);
   }
-  // if (!recordings.has(channelId)) {
-  //   recordings.set(channelId, [])
-  // }
-
+  
   recordings.get(guildId)!.push(rec);
 
   //log in console
   logRecordingsState();
 
-  // end of stream
-  // opusStream.on('end', () => {
-  //   console.log(`Finished recording ${user.username} to ${filePath}`)
 
-  //   const wavPath = filePath.replace(/\.pcm$/, '.wav')
-  //   // grabs ffmpeg path and runs this
-  //   const ffmpegProcess = spawn(ffmpegPath, [
-  //     '-f', 's16le', '-ar', '48k', '-ac', '2', '-i', filePath, wavPath,
-  //   ])
-
-  //   // exports the output to console
-  //   ffmpegProcess.stderr.on('data', (data) => {
-  //     console.log(`[ffmpeg] ${data}`)
-  //   })
-
-  //   // once it's finished, see if theres an error
-  //   ffmpegProcess.on('close', (code) => {
-  //     if (code === 0) {
-  //       console.log(`Success: ${wavPath}`)
-  //       path.resolve()
-  //     } else {
-  //       console.error(`ffmpeg exited with code ${code}`)
-  //       return
-  //     }
-  //   })
-  // })
 }
 
 async function execute(interaction: ChatInputCommandInteraction) {
+  //check if interaction is in guild
   if (!interaction.inCachedGuild()) {
     await interaction.reply('Use this bot in discord servers only!')
     return
   }
+  //check if bot is in voice channel
   if (!interaction.guild.members.me?.voice.channel) {
     await interaction.reply('I am not in a voice channel!')
     return
   }
+  //check if user is in voice channel
+  if (!interaction.member.voice.channel) {
+    await interaction.reply('You are not in a voice channel!')
+    return
+  }
+  //check if user is in same voice channel as bot
+  if (interaction.member.voice.channel.id !== interaction.guild.members.me.voice.channel.id) {
+    await interaction.reply('You must be in the same voice channel as me to use this command!')
+    return
+  }
+  //check if recording already in progress in this guild
+  const guildRecordings = recordings.get(interaction.guildId!); //for this guild
+  if (guildRecordings && guildRecordings.length > 0) {        // if recordings in progress
+    await interaction.reply('Recording already in progress.\nPlease stop current recording before starting another one.')
+
+    return
+  }
+  
   //TODO: add error checking if user has already started a recording in the channel
   // grab all users that were given in command
   const userOptionNames = Array.from({ length: 6 }, (_, i) => `user${i + 1}`)

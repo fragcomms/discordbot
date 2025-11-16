@@ -5,6 +5,7 @@ import * as path from 'node:path'
 import { ChatInputCommandInteraction, Client, ClientUser, Collection, Events, GatewayIntentBits, MessageFlags, GuildChannelManager, TextChannel } from 'discord.js'
 import { ExtendedClient } from './types/ExtendedClient.js'
 import { fileURLToPath } from 'node:url'
+import { cleanOldDataFiles } from './commands/utility/cleanup.js';
 
 const client = new ExtendedClient()
 const __filename = fileURLToPath(import.meta.url)
@@ -43,5 +44,10 @@ for (const file of eventFiles) {
     client.on(event.name, (...args) => event.execute(...args))
   }
 }
+
+// CLEAN OLD DATA FILES EVERY 48 HOURS
+setInterval(() => {
+  cleanOldDataFiles("data", ".pcm");
+}, 1000 * 60 * 60 * 48);
 
 client.login(process.env.DISCORD_TOKEN)

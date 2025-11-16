@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { SlashCommandBuilder, ChatInputCommandInteraction } from "discord.js";
-import { cleanUpProcess } from "../../events/disconnect.js";
+import { cleanUpProcess } from "../utility/cleanup.js";
 import { recordings} from '../utility/recordings.js';
 
 

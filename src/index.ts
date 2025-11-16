@@ -46,8 +46,11 @@ for (const file of eventFiles) {
 }
 
 // CLEAN OLD DATA FILES EVERY 48 HOURS
-setInterval(() => {
-  cleanOldDataFiles("data", ".pcm");
-}, 1000 * 60 * 60 * 48);
+// can be implemented later
+// setInterval(() => {
+//   cleanOldDataFiles("data", ".pcm");
+//   cleanOldDataFiles("data", ".mka");
+//   cleanOldDataFiles("data", ".wav");
+// }, 1000 * 60 * 60 * 48);
 
 client.login(process.env.DISCORD_TOKEN)

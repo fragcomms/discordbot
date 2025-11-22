@@ -7,11 +7,6 @@ import { Client, TextChannel } from "discord.js";
 import { sendMessage } from "./messages.js";
 
 
-
-// SEND MESSAGE
-
-
-
 //CLEANUP PROCESS
 // stop all recordings, finalize audio files, send messages
 export async function cleanUpProcess(guildId : string, channelId: string, client: Client) {

@@ -2,7 +2,7 @@
 // clean these imports after fully functional command
 import { SlashCommandBuilder, ChatInputCommandInteraction, ButtonBuilder, ButtonStyle, User, MembershipScreeningFieldType, GuildMember, InteractionCallback, Guild, VoiceChannel } from 'discord.js';
 import { EndBehaviorType, getVoiceConnection, VoiceReceiver } from '@discordjs/voice'
-import { recordings, Recording, logRecordingsState } from '../utility/recordings.js';
+import { recordings, Recording, logRecordings } from '../utility/recordings.js';
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as prism from 'prism-media'
@@ -97,7 +97,7 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   recordings.get(guildId)!.push(rec);
 
   //log in console
-  logRecordingsState();
+  logRecordings();
 
 
 }

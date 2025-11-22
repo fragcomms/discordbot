@@ -8,11 +8,11 @@ import ffmpeg from 'ffmpeg-static'
 export interface Recording {
     opusStream: AudioReceiveStream;
     filePath: string;   // filePath
-    user: User;         // User object 
+    user: User;        // User object 
     timestamp: string;
 }
 
-export function logRecordingsState() {
+export function logRecordings() {
   console.log("\n📜 Current recordings state:");
   for (const [channelId, recs] of recordings.entries()) {
     console.log(`  Channel ${channelId}:`);

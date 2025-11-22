@@ -4,22 +4,12 @@ import { convertMultiplePcmToMka } from "./audio-conversion.js";
 import fs from "node:fs";
 import path from "node:path";
 import { Client, TextChannel } from "discord.js";
-
-
+import { sendMessage } from "./messages.js";
 
 
 
 // SEND MESSAGE
-// to be moved to future messages.ts utility file
-export async function sendMessage(client: Client, channelId: string, msg: string) {
-    const channel = client.channels.cache.get(channelId);
-    if(!channel || !channel?.isTextBased()) {
-        console.log(`Channel not text-based/channel not found`);
-        return;
-    }
-    const textChannel = channel as TextChannel;
-    await textChannel.send(msg);
-}
+
 
 
 //CLEANUP PROCESS
@@ -27,7 +17,7 @@ export async function sendMessage(client: Client, channelId: string, msg: string
 export async function cleanUpProcess(guildId : string, channelId: string, client: Client) {
     const guildRecordings = recordings.get(guildId);
     if (!guildRecordings || guildRecordings.length == 0) {
-        console.log(`No recording in progress`);
+        console.log(`No recordings in progress`);
         return;
     }
      //STOP AND PROCESS ALL ACTIVE RECORDINGS
@@ -41,11 +31,16 @@ export async function cleanUpProcess(guildId : string, channelId: string, client
     }
   }
   const wavPath = await convertMultiplePcmToMka(path.join(process.cwd(), 'data', guildId), guildRecordings[0].timestamp)
-  await sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`);
+  sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`);
   recordings.delete(guildId) // delete once finished, we don't need to keep old streams
 
 }
 
+export function cleanUpDirectory(directory: string) {
+  cleanOldDataFiles(directory, ".pcm");
+  cleanOldDataFiles(directory, ".mka");
+  cleanOldDataFiles(directory, ".wav");
+}
 
 //clean data files older than set time 
 export function cleanOldDataFiles(directory: string, fileExtension: string ) {
@@ -87,9 +82,14 @@ export function cleanOldDataFiles(directory: string, fileExtension: string ) {
     }
   }
 
+  if(totalDump == 0) {
+    console.log(`No ${fileExtension} files were deleted.`);
+    return;
+  }
+
   const totalDumpInfo = fileSizeConversion(totalDump);
   console.log(`✅ Old file cleanup in ${directory} completed.`);
-  console.log(`Sized of all deleted files: ${totalDumpInfo}`);
+  console.log(`Size of all deleted files: ${totalDumpInfo}`);
 
 }
 

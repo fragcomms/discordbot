@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 //TODO: clean imports after finish
-import { ChatInputCommandInteraction, InteractionCallback, SlashCommandBuilder } from "discord.js";
+import { ChatInputCommandInteraction, Client, InteractionCallback, SlashCommandBuilder } from "discord.js";
 import { joinVoiceChannel, getVoiceConnection, VoiceConnectionStatus } from '@discordjs/voice'
 import { cleanUpProcess} from '../utility/cleanup.js';
 import { recordings } from "../utility/recordings.js";
+//import { sendMessage } from "../utility/messages.js";
 
 const data = new SlashCommandBuilder().setName('join').setDescription('Allows the bot to join the same channel as the user.');
 
@@ -48,10 +49,12 @@ async function execute(interaction: ChatInputCommandInteraction) {
         `Disconnect logged from voice channel in guild ${interaction.guildId}`
       );
       
-      cleanUpProcess(          // disconnects when bot is disconnected by any means
+      // disconnect when bot is disconnected by any means
+      cleanUpProcess(          
         interaction.guildId!, 
         interaction.channelId!, 
         interaction.client);
+
       }
 
   })
@@ -59,6 +62,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   console.log(`joined ${interaction.member.voice.channel.name}, id: ${interaction.member.voice.channelId}`);
   await interaction.reply(`Joined ${interaction.member.voice.channel.name}`)
+  
 }
 
 export { data, execute }

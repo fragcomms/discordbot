@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ChatInputCommandInteraction, SlashCommandBuilder, VoiceBasedChannel } from "discord.js";
 import { getVoiceConnection } from '@discordjs/voice'
-import { cleanOldDataFiles } from "../utility/cleanup.js";
+import { cleanUpDirectory } from "../utility/cleanup.js";
 
 
 const data = new SlashCommandBuilder()
@@ -31,9 +31,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   //testing data file cleanup
   //can go elsewhere later, possibly in index.ts
-  cleanOldDataFiles("data", ".pcm");
-  cleanOldDataFiles("data", ".mka");
-  cleanOldDataFiles("data", ".wav");
+  // cleanUpDirectory("data");
 }
 
 export { data, execute }

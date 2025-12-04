@@ -87,6 +87,7 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: strin
     '-frame_duration', '60',
     '-compression_level', '10',
     '-vbr', 'on', 
+    '-af', 'dynaudnorm,highpass=f=200,lowpass=f=3000',
     '-application', 'voip',
     '-ac', '1', outputPath)
 

@@ -3,7 +3,7 @@ import { recordings } from "./recordings.js";
 import { convertMultiplePcmToMka } from "./audio-conversion.js";
 import fs from "node:fs";
 import path from "node:path";
-import { Client, TextChannel } from "discord.js";
+import { Client } from "discord.js";
 import { sendMessage } from "./messages.js";
 
 
@@ -28,7 +28,7 @@ export async function cleanUpProcess(guildId : string, channelId: string, client
   const wavPath = await convertMultiplePcmToMka(path.join(process.cwd(), 'data', guildId), guildRecordings[0].timestamp)
   sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`);
   recordings.delete(guildId) // delete once finished, we don't need to keep old streams
-
+  //TODO: add cleanupdirectory functionality
 }
 
 export function cleanUpDirectory(directory: string) {
@@ -64,7 +64,7 @@ export function cleanOldDataFiles(directory: string, fileExtension: string ) {
 
     const stats = fs.statSync(filePath);
     const fileAge = now - stats.mtimeMs;
-    let fileSize = stats.size; // size in bytes
+    const fileSize = stats.size; // size in bytes
     totalDump += fileSize; // add to total dump
 
     const fileInfo = fileSizeConversion(fileSize)
@@ -133,7 +133,7 @@ function fileSizeConversion(fileSize: number): string {
     }
     // else, fileSize is alreay in bytes
 
-  let convertedString = (`${fileSize} ${fileSizeUnits}`);
+  const convertedString = (`${fileSize} ${fileSizeUnits}`);
   return convertedString;
 
 }

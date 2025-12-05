@@ -51,17 +51,14 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: strin
       const filePath = path.join(dir, file)
       if (fs.statSync(filePath).isDirectory()) {
         walk(filePath)
-      } else if (filePath.endsWith(".pcm")) {
+      } else if (filePath.includes(`${timestamp}.pcm`)) {
         pcmFiles.push(filePath)
       }
     }
   }
   walk(guildDir)
 
-  const matching = pcmFiles.filter((file) =>
-    file.includes(`${timestamp}.pcm`)
-  )
-  if (matching.length === 0) {
+  if (pcmFiles.length === 0) {
     throw new Error(`No .pcm files found for timestamp ${timestamp}`)
   }
 
@@ -70,14 +67,14 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: strin
 
   // normalize length of all pcm files and set up args
   let maxSize = 0
-  for (const file of matching) {
+  for (const file of pcmFiles) {
     ffmpegArgs.push('-f', 's16le', '-ar', '48k', '-ac', '2', '-i', file)
     const size = fs.statSync(file).size
     if (size > maxSize) {
       maxSize = size
     }
   }
-  for (const [index, value] of matching.entries()) {
+  for (const [index, value] of pcmFiles.entries()) {
     await padPcmFile(value, maxSize)
     ffmpegArgs.push('-map', `${index}:a`)
   }

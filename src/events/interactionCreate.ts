@@ -1,4 +1,4 @@
-import { Events, MessageFlags, ChatInputCommandInteraction, User } from 'discord.js'
+import { Events, MessageFlags, ChatInputCommandInteraction } from 'discord.js'
 import { ExtendedClient } from '../types/ExtendedClient.js'
 import { lastChannelInteraction } from '../commands/utility/last-channel-interaction.js'
 

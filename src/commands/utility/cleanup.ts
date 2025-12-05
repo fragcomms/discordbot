@@ -7,6 +7,7 @@ import path from "node:path";
 import { Client } from "discord.js";
 import { sendMessage } from "./messages.js";
 import { Client as SCPClient } from 'node-scp'
+import { Client as PGClient } from 'pg'
 import dotenv from 'dotenv'
 dotenv.config()
 
@@ -34,6 +35,15 @@ export async function cleanUpProcess(guildId: string, channelId: string, voiceCh
   //send file to backend
   //insert into database
 
+  const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}`; // directory of path to server
+  const remoteFile = `${remoteDir}/${guildRecordings[0].timestamp}.mka`; // file name
+
+  /**
+   * im sure if there is a better way to do this, but i made it so that
+   * each and every step (scp file transfer and db insertions) is linear so that way 
+   * it breaks the least
+   */
+  //scp INTO SERVER and TRANSFER .mka
   (async () => {
     try {
       const scp = await SCPClient({
@@ -42,29 +52,86 @@ export async function cleanUpProcess(guildId: string, channelId: string, voiceCh
         username: process.env.SCP_USER,
         password: process.env.SCP_PASS,
       })
-      const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}`
-      const remoteFile = `${remoteDir}/combined_${guildRecordings[0].timestamp}.mka`
-
-      
+      // if the scp client connected properly
       if (!(await scp.exists(remoteDir))) {
         console.log(`Creating ${remoteDir}`)
         await scp.mkdir(remoteDir, undefined, { recursive: true })
       }
-
-      console.log(`Uploading ${wavPath} to ${remoteFile}...`);
+      console.log(`Uploading ${wavPath} to ${remoteFile}...`)
       await scp.uploadFile(wavPath, remoteFile)
-
-      console.log('Upload successful');
-      scp.close()
-
+      console.log('Upload successful')
+      scp.close() // closes connection after its finished
     } catch (e) {
       console.log("Transfer failed:", e)
+      return;
     }
-  })()
+  })();
+
+  // connect to DB and insert audio, ownership, and create user if required
+  (async () => {
+    try {
+      const postgres = new PGClient({
+        user: process.env.PG_USER,
+        password: process.env.PG_PASS,
+        host: process.env.PG_HOST,
+        database: process.env.PG_DB,
+      })
+      await postgres.connect()
+      console.log("connected to db")
+      // creates a entry for the processed audio file
+      const insertQuery = `
+      INSERT INTO public.audios (file_ext, path, sampling_rate, creation_time) 
+      VALUES ($1, $2, $3, $4) 
+      ON CONFLICT DO NOTHING 
+      RETURNING audio_id;
+      `;
+      // postgres doesn't accept raw UNIX :'(
+      const values = ['mka', remoteFile, '20000', new Date(Number(guildRecordings[0].timestamp))];
+      const res = await postgres.query(insertQuery, values);
+
+      const newAudioId = res.rows[0].audio_id;
+      console.log(`Inserted Audio Record. ID: ${newAudioId}`);
+      for (const recording of guildRecordings) {
+        const userId = recording.user.id;
+        const username = recording.user.username;
+
+        try {
+          // PARENT OF media_access
+          // REQUIRED to create first before inserting into media_access
+          await postgres.query(`
+            INSERT INTO public.users (discord_id, created_at, discord_display_name) 
+            VALUES ($1, $2, $3) 
+            ON CONFLICT DO NOTHING;`, [
+              userId, 
+              new Date(Number(guildRecordings[0].timestamp)), 
+              username
+            ]);
+
+          await postgres.query(`
+            INSERT INTO public.media_access (discord_id, audio_id) 
+            VALUES ($1, $2);`, [
+              userId, 
+              newAudioId
+            ]); // if this succeeds, we are bingo
+
+        } catch (err) {
+          // maybe error is specific to user
+          console.error(`Failed to link user ${username} to audio:`, err);
+        }
+      }
+
+      await postgres.end()
+      console.log("disconnected from db") // good practice
+    } catch (e) {
+      console.log(e)
+    }
+  })();
+
   recordings.delete(guildId) // delete once finished, we don't need to keep old streams
   //TODO: add cleanupdirectory functionality
 }
 
+//UNUSED ATM
 export function cleanUpDirectory(directory: string) {
   cleanOldDataFiles(directory, ".pcm");
   cleanOldDataFiles(directory, ".mka");

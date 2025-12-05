@@ -42,7 +42,7 @@ async function padPcmFile(filePath: string, targetSizeBytes: number): Promise<vo
   fs.appendFileSync(filePath, silenceBuffer)
 }
 
-export async function convertMultiplePcmToMka(guildDir: string, timestamp: string) : Promise<string>{
+export async function convertMultiplePcmToMka(guildDir: string, timestamp: number) : Promise<string>{
   const pcmFiles: string[] = []
 
   // recursive func that discovers all pcm files

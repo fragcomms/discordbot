@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 //TODO: stop recording when bot is force disconnected, this should be done for everything
 import { recordings } from "./recordings.js";
 import { convertMultiplePcmToMka } from "./audio-conversion.js";
@@ -5,17 +6,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { Client } from "discord.js";
 import { sendMessage } from "./messages.js";
+import { Client as SCPClient } from 'node-scp'
+import dotenv from 'dotenv'
+dotenv.config()
 
 
 //CLEANUP PROCESS
 // stop all recordings, finalize audio files, send messages
-export async function cleanUpProcess(guildId : string, channelId: string, client: Client) {
-    const guildRecordings = recordings.get(guildId);
-    if (!guildRecordings || guildRecordings.length == 0) {
-        console.log(`No recordings in progress`);
-        return;
-    }
-     //STOP AND PROCESS ALL ACTIVE RECORDINGS
+export async function cleanUpProcess(guildId: string, channelId: string, voiceChannelId: string, client: Client) {
+  const guildRecordings = recordings.get(guildId);
+  if (!guildRecordings || guildRecordings.length == 0) {
+    console.log(`No recordings in progress`);
+    return;
+  }
+  //STOP AND PROCESS ALL ACTIVE RECORDINGS
   for (const recording of guildRecordings) {       // iterate through all active recordings
     try {
       recording.opusStream.destroy();     // stop the stream
@@ -25,8 +29,38 @@ export async function cleanUpProcess(guildId : string, channelId: string, client
       await sendMessage(client, channelId, `Could not stop recording for ${recording.user.username}:`);
     }
   }
-  const wavPath = await convertMultiplePcmToMka(path.join(process.cwd(), 'data', guildId), guildRecordings[0].timestamp)
+  const wavPath = await convertMultiplePcmToMka(path.join(process.cwd(), 'data', guildId, voiceChannelId), guildRecordings[0].timestamp)
   sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`);
+  //send file to backend
+  //insert into database
+
+  (async () => {
+    try {
+      const scp = await SCPClient({
+        host: process.env.SCP_HOST,
+        port: process.env.SCP_PORT,
+        username: process.env.SCP_USER,
+        password: process.env.SCP_PASS,
+      })
+      const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}`
+      const remoteFile = `${remoteDir}/combined_${guildRecordings[0].timestamp}.mka`
+
+      
+      if (!(await scp.exists(remoteDir))) {
+        console.log(`Creating ${remoteDir}`)
+        await scp.mkdir(remoteDir, undefined, { recursive: true })
+      }
+
+      console.log(`Uploading ${wavPath} to ${remoteFile}...`);
+      await scp.uploadFile(wavPath, remoteFile)
+
+      console.log('Upload successful');
+      scp.close()
+
+    } catch (e) {
+      console.log("Transfer failed:", e)
+    }
+  })()
   recordings.delete(guildId) // delete once finished, we don't need to keep old streams
   //TODO: add cleanupdirectory functionality
 }
@@ -38,17 +72,17 @@ export function cleanUpDirectory(directory: string) {
 }
 
 //clean data files older than set time 
-export function cleanOldDataFiles(directory: string, fileExtension: string ) {
+export function cleanOldDataFiles(directory: string, fileExtension: string) {
 
   const setTimeHours = 48;
   const ageThreshholdinMS = 1000 * 60 * 60 * setTimeHours; // 48 hours
   // const ageThreshholdinMS = 1000*60*5; // 5 mins
   const now = Date.now();
   let totalDump = 0;
-  
+
 
   //check if directory exists
-  if(!fs.existsSync(directory)) {
+  if (!fs.existsSync(directory)) {
     console.log(`Directory ${directory} not found.`);
     return;
   }
@@ -58,7 +92,7 @@ export function cleanOldDataFiles(directory: string, fileExtension: string ) {
 
   for (const filePath of files) {
 
-    if(!filePath.endsWith(fileExtension)) {
+    if (!filePath.endsWith(fileExtension)) {
       continue;
     }
 
@@ -71,13 +105,13 @@ export function cleanOldDataFiles(directory: string, fileExtension: string ) {
 
     //delete file 
     //show size of deletions in console. can be taken out.
-    if(fileAge > ageThreshholdinMS) {
+    if (fileAge > ageThreshholdinMS) {
       console.log(`🗑️ Deleting: ${filePath} - ${fileInfo}`);
-      fs.rmSync(filePath, {recursive: true, force: true});
+      fs.rmSync(filePath, { recursive: true, force: true });
     }
   }
 
-  if(totalDump == 0) {
+  if (totalDump == 0) {
     console.log(`No ${fileExtension} files were deleted.`);
     return;
   }
@@ -92,14 +126,14 @@ export function cleanOldDataFiles(directory: string, fileExtension: string ) {
 
 //helper function for getting all files in the data folder
 function RecursiveFileSearch(directory: string): string[] {
-  let fileList : string[] = [];
+  let fileList: string[] = [];
 
   const list = fs.readdirSync(directory);
   for (const item of list) {
     const filePath = path.join(directory, item);
     const stats = fs.statSync(filePath);
-    
-    if(stats.isDirectory()) {
+
+    if (stats.isDirectory()) {
       // if folder, call function recursively on folder
       fileList = fileList.concat(RecursiveFileSearch(filePath));
     }
@@ -116,22 +150,22 @@ function RecursiveFileSearch(directory: string): string[] {
 // helper function - returns file size and correct units as a string
 function fileSizeConversion(fileSize: number): string {
   let fileSizeUnits = "bytes";
-  
+
   if (fileSize >= 1073741824) { // 1 GB or greater
-      fileSize = fileSize / 1024 / 1024 / 1024; //convert
-      fileSizeUnits = "GB";
-    }
-    else if (fileSize >= 1048576) { // 1 MB or greater
-      fileSize = fileSize / 1024 / 1024;
-      fileSizeUnits = "MB";
+    fileSize = fileSize / 1024 / 1024 / 1024; //convert
+    fileSizeUnits = "GB";
+  }
+  else if (fileSize >= 1048576) { // 1 MB or greater
+    fileSize = fileSize / 1024 / 1024;
+    fileSizeUnits = "MB";
 
-    }
-    else if (fileSize >= 1024) { // 1 KB or greater
-      fileSize = fileSize / 1024;
-      fileSizeUnits = "KB";
+  }
+  else if (fileSize >= 1024) { // 1 KB or greater
+    fileSize = fileSize / 1024;
+    fileSizeUnits = "KB";
 
-    }
-    // else, fileSize is alreay in bytes
+  }
+  // else, fileSize is alreay in bytes
 
   const convertedString = (`${fileSize} ${fileSizeUnits}`);
   return convertedString;

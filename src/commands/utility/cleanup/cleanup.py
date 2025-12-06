@@ -88,7 +88,7 @@ class PGManager:
         try:
             cur = self.conn.cursor()
             query = """
-                INSERT INTO public.users (discord_id, created_at, discord_display_name) 
+                INSERT INTO public.users (discord_id, created_at, discord_username) 
                 VALUES (%s, %s, %s) 
                 ON CONFLICT (discord_id) DO NOTHING;
             """
@@ -125,11 +125,9 @@ class RecordingSessionManager:
         timestamp = int(data['timestamp'])
         remote_full_path = f"{remote_dir}/{remote_filename}"
 
-        # 1. Upload
         success = self.scp.transfer_audio(local_wav_path, remote_dir, remote_filename)
 
         if success:
-            # 2. Database
             try:
                 self.db.connect()
                 audio_id = self.db.insert_audio_record('mka', remote_full_path, timestamp)

@@ -30,7 +30,8 @@ export function logRecordings() {
 
 // }
 
-export const recordings = new Map<string, Recording[]>();   // <guildId, array of recordings>
+// Map of <guildId, Recording[]>
+export const recordings = new Map<string, Recording[]>();
 
 
 

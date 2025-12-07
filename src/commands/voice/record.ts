@@ -11,7 +11,6 @@ import { spawn, exec } from 'child_process'
 import ffmpeg from 'ffmpeg-static'
 import { OpusStream } from 'prism-media/typings/opus.js';
 import { Channel, channel } from 'node:diagnostics_channel';
-import { UDPIntegrityMonitor } from '../../monitor/upd_integrity_monitor.js';
 
 const ffmpegPath = ffmpeg as unknown as string
 
@@ -41,8 +40,6 @@ const data = new SlashCommandBuilder()
     .setName('user6')
     .setDescription('User to be recorded'))
 
-const udpMonitors = new Map<string, UDPIntegrityMonitor>();
-
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
 async function createListeningStream(receiver: VoiceReceiver, user: User, guildId: string, channelId: string, datenow: string) {
   const opusStream = receiver.subscribe(user.id, {
@@ -60,35 +57,46 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   const filePath = path.join(dataDir, `${datenow}.pcm`);
   const outputStream = fs.createWriteStream(filePath);
 
-  let lastPacketTime = Number(datenow);
+  // Initialize tracking variables
+  let lastPacketTime = 0; // Start at 0 instead of datenow
   let totalPackets = 0;
   let lostPackets = 0;
   let totalGapMs = 0;
+  let isFirstPacket = true; // Track first packet to avoid false positives
+  
+  console.log(`[${user.username}] 🎙️  Started monitoring UDP packets...`);
   
   opusStream.on('data', (chunk: Buffer) => {
     const now = Date.now();
-    const delta = now - lastPacketTime;
     totalPackets++;
 
-    // Discord sends packets every 20ms
-    // If gap > 40ms, we likely lost packets
-    if (delta > 40 && lastPacketTime !== Number(datenow)) {
-      const estimatedLost = Math.floor(delta / 20) - 1;
-      lostPackets += estimatedLost;
-      totalGapMs += delta - 20;
-      console.warn(`[${user.username}] ⚠️  Packet loss detected! Gap: ${delta}ms, Estimated lost: ${estimatedLost}`);
+    // Skip gap detection for the very first packet
+    if (!isFirstPacket) {
+      const delta = now - lastPacketTime;
+      
+      // Discord sends packets every 20ms
+      // If gap > 40ms, we likely lost packets
+      if (delta > 40) {
+        const estimatedLost = Math.floor(delta / 20) - 1;
+        lostPackets += estimatedLost;
+        totalGapMs += delta - 20;
+        console.warn(`[${user.username}] ⚠️  Packet loss detected! Gap: ${delta}ms, Estimated lost: ${estimatedLost}`);
+      }
+
+      // Insert silence for missing frames
+      const missingFrames = Math.floor(delta / 20) - 1;
+      if (missingFrames > 0) {
+        const silence = Buffer.alloc(missingFrames * 960 * 2 * 2, 0);
+        outputStream.write(silence);
+      }
+    } else {
+      isFirstPacket = false;
+      console.log(`[${user.username}] ✅ First packet received`);
     }
 
-    // Insert silence for missing frames
-    const missingFrames = Math.floor(delta / 20) - 1;
-    if (missingFrames > 0) {
-      const silence = Buffer.alloc(missingFrames * 960 * 2 * 2, 0);
-      outputStream.write(silence);
-    }
-
-    // Log stats every 500 packets
+    // Log stats every 500 packets (~10 seconds of audio)
     if (totalPackets % 500 === 0) {
-      const successRate = ((totalPackets - lostPackets) / (totalPackets + lostPackets)) * 100;
+      const successRate = totalPackets > 0 ? ((totalPackets - lostPackets) / (totalPackets + lostPackets)) * 100 : 100;
       console.log(`[${user.username}] 📊 Stats - Received: ${totalPackets} | Lost: ${lostPackets} | Success: ${successRate.toFixed(2)}% | Total gap: ${totalGapMs}ms`);
     }
     

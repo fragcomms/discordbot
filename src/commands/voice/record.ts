@@ -45,10 +45,6 @@ const udpMonitors = new Map<string, UDPIntegrityMonitor>();
 
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
 async function createListeningStream(receiver: VoiceReceiver, user: User, guildId: string, channelId: string, datenow: string) {
-  // Initialize monitor for this user
-  const udpMonitor = new UDPIntegrityMonitor();
-  udpMonitors.set(user.id, udpMonitor);
-
   const opusStream = receiver.subscribe(user.id, {
     end: { behavior: EndBehaviorType.Manual },
   });
@@ -65,30 +61,37 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   const outputStream = fs.createWriteStream(filePath);
 
   let lastPacketTime = Number(datenow);
+  let totalPackets = 0;
+  let lostPackets = 0;
+  let totalGapMs = 0;
+  
   opusStream.on('data', (chunk: Buffer) => {
     const now = Date.now();
     const delta = now - lastPacketTime;
+    totalPackets++;
 
-    // Create monitored packet wrapper with sequence number and checksum
-    const monitoredPacket = udpMonitor.createMonitoredPacket(chunk);
-    
-    // IMPORTANT: Verify the packet we just created to detect corruption/loss
-    const [isValid, payload, message] = udpMonitor.verifyPacket(monitoredPacket);
-    
-    if (!isValid) {
-      console.warn(`[${user.username}] Packet verification failed: ${message}`);
+    // Discord sends packets every 20ms
+    // If gap > 40ms, we likely lost packets
+    if (delta > 40 && lastPacketTime !== Number(datenow)) {
+      const estimatedLost = Math.floor(delta / 20) - 1;
+      lostPackets += estimatedLost;
+      totalGapMs += delta - 20;
+      console.warn(`[${user.username}] ⚠️  Packet loss detected! Gap: ${delta}ms, Estimated lost: ${estimatedLost}`);
     }
 
-    // Log stats every 500 packets
-    if (udpMonitor.getStatistics().totalPackets % 500 === 0) {
-      udpMonitor.logStats();
-    }
-
+    // Insert silence for missing frames
     const missingFrames = Math.floor(delta / 20) - 1;
     if (missingFrames > 0) {
       const silence = Buffer.alloc(missingFrames * 960 * 2 * 2, 0);
       outputStream.write(silence);
     }
+
+    // Log stats every 500 packets
+    if (totalPackets % 500 === 0) {
+      const successRate = ((totalPackets - lostPackets) / (totalPackets + lostPackets)) * 100;
+      console.log(`[${user.username}] 📊 Stats - Received: ${totalPackets} | Lost: ${lostPackets} | Success: ${successRate.toFixed(2)}% | Total gap: ${totalGapMs}ms`);
+    }
+    
     lastPacketTime = now;
   });
 

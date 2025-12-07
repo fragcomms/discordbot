@@ -69,8 +69,16 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
     const now = Date.now();
     const delta = now - lastPacketTime;
 
-    // Track packet integrity locally (console only)
-    udpMonitor.createMonitoredPacket(chunk);
+    // Create monitored packet wrapper with sequence number and checksum
+    const monitoredPacket = udpMonitor.createMonitoredPacket(chunk);
+    
+    // IMPORTANT: Verify the packet we just created to detect corruption/loss
+    const [isValid, payload, message] = udpMonitor.verifyPacket(monitoredPacket);
+    
+    if (!isValid) {
+      console.warn(`[${user.username}] Packet verification failed: ${message}`);
+    }
+
     // Log stats every 500 packets
     if (udpMonitor.getStatistics().totalPackets % 500 === 0) {
       udpMonitor.logStats();

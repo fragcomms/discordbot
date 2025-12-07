@@ -11,6 +11,7 @@ import { spawn, exec } from 'child_process'
 import ffmpeg from 'ffmpeg-static'
 import { OpusStream } from 'prism-media/typings/opus.js';
 import { Channel, channel } from 'node:diagnostics_channel';
+import { UDPIntegrityMonitor } from '../../monitor/upd_integrity_monitor.js';
 
 const ffmpegPath = ffmpeg as unknown as string
 
@@ -40,66 +41,63 @@ const data = new SlashCommandBuilder()
     .setName('user6')
     .setDescription('User to be recorded'))
 
+const udpMonitors = new Map<string, UDPIntegrityMonitor>();
+
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
 async function createListeningStream(receiver: VoiceReceiver, user: User, guildId: string, channelId: string, datenow: string) {
-  // creates a listener on the user, raw packets atm
+  // Initialize monitor for this user
+  const udpMonitor = new UDPIntegrityMonitor();
+  udpMonitors.set(user.id, udpMonitor);
+
   const opusStream = receiver.subscribe(user.id, {
-    end: {
-      //TODO: add a manual stop record because inactivity is individual, not the whole group
-      behavior: EndBehaviorType.Manual
-    },
-  })
-  // converts raw packets to have the format of an audio file
+    end: { behavior: EndBehaviorType.Manual },
+  });
   const decoder = new prism.opus.Decoder({
     rate: 48000,
-    channels: 2, // unsure if 1 or 2
+    channels: 2,
     frameSize: 960,
-  })
+  });
 
-  // root directory
-  // this can be replaced by a database insertion once its finished
-  const dataDir = path.join(process.cwd(), 'data', guildId, channelId, user.id)
-  fs.mkdirSync(dataDir, { recursive: true })
+  const dataDir = path.join(process.cwd(), 'data', guildId, channelId, user.id);
+  fs.mkdirSync(dataDir, { recursive: true });
 
-  const filePath = path.join(dataDir, `${datenow}.pcm`)
-  const outputStream = fs.createWriteStream(filePath)
+  const filePath = path.join(dataDir, `${datenow}.pcm`);
+  const outputStream = fs.createWriteStream(filePath);
 
-  // silence gap adder
-  let lastPacketTime = Number(datenow)
-  opusStream.on('data', () => {
-    const now = Date.now()
-    const delta = now - lastPacketTime
+  let lastPacketTime = Number(datenow);
+  opusStream.on('data', (chunk: Buffer) => {
+    const now = Date.now();
+    const delta = now - lastPacketTime;
 
-    // each frame is 20ms of audio at 48kHz
-    const missingFrames = Math.floor(delta / 20) - 1
-    if (missingFrames > 0) {
-      // 960 * 2 bytes/sample * 2 channels
-      const silence = Buffer.alloc(missingFrames * 960 * 2 * 2, 0)
-      outputStream.write(silence)
+    // Track packet integrity locally (console only)
+    udpMonitor.createMonitoredPacket(chunk);
+    // Log stats every 500 packets
+    if (udpMonitor.getStatistics().totalPackets % 500 === 0) {
+      udpMonitor.logStats();
     }
-    lastPacketTime = now
-  })
 
-  opusStream.pipe(decoder).pipe(outputStream)
+    const missingFrames = Math.floor(delta / 20) - 1;
+    if (missingFrames > 0) {
+      const silence = Buffer.alloc(missingFrames * 960 * 2 * 2, 0);
+      outputStream.write(silence);
+    }
+    lastPacketTime = now;
+  });
 
-  // store the recording object in the recordings map
+  opusStream.pipe(decoder).pipe(outputStream);
+
   const rec: Recording = {
     opusStream,
     filePath,
     user,
     timestamp: datenow,
-  }
+  };
 
   if (!recordings.has(guildId)) {
     recordings.set(guildId, []);
   }
-  
   recordings.get(guildId)!.push(rec);
-
-  //log in console
   logRecordings();
-
-
 }
 
 async function execute(interaction: ChatInputCommandInteraction) {

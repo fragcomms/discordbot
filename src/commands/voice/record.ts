@@ -7,6 +7,7 @@ import * as path from 'node:path'
 import * as prism from 'prism-media'
 import { fileURLToPath } from 'node:url'
 import ffmpeg from 'ffmpeg-static'
+import { spawn, ChildProcess } from 'node:child_process' // Import spawn
 
 const ffmpegPath = ffmpeg as unknown as string
 const __filename = fileURLToPath(import.meta.url)
@@ -35,8 +36,6 @@ const data = new SlashCommandBuilder()
     .setName('user6')
     .setDescription('User to be recorded'))
 
-// Track RTP sequence numbers per SSRC (Synchronization Source)
-const lastRtpSeqPerSSRC = new Map<number, number>();
 // Track statistics per SSRC
 const statsPerSSRC = new Map<number, { 
   totalPackets: number; 
@@ -44,96 +43,64 @@ const statsPerSSRC = new Map<number, {
   username: string;
 }>();
 
-// Inspect raw RTP packet from UDP message
-function inspectRTPPacket(buffer: Buffer, ssrc: number, username: string): { seq: number; loss: number } {
-  if (buffer.length < 12) {
-    return { seq: 0, loss: 0 };
-  }
-
-  const seq = buffer.readUInt16BE(2);
-
-  // Initialize stats if first packet from this SSRC
-  if (!statsPerSSRC.has(ssrc)) {
-    statsPerSSRC.set(ssrc, { totalPackets: 0, lostPackets: 0, username });
-    lastRtpSeqPerSSRC.set(ssrc, seq);
-    return { seq, loss: 0 };
-  }
-
-  const stats = statsPerSSRC.get(ssrc)!;
-  stats.totalPackets++;
-
-  let loss = 0;
-  const prevSeq = lastRtpSeqPerSSRC.get(ssrc)!;
-
-  // Check for packet loss by comparing sequence numbers
-  const expected = (prevSeq + 1) & 0xFFFF;
-  
-  if (seq !== expected) {
-    // Calculate packets lost (accounting for wraparound)
-    loss = (seq - expected) & 0xFFFF;
-    
-    if (loss > 0 && loss < 100) {
-      stats.lostPackets += loss;
-      console.warn(
-        `⚠️  [${username}] RTP packet loss detected! Expected seq: ${expected}, Got: ${seq}, Lost: ${loss} packets`
-      );
-    }
-  }
-
-  lastRtpSeqPerSSRC.set(ssrc, seq);
-
-  return { seq, loss };
-}
-
-// Hook into receiver's onUdpMessage to monitor raw packets
-function setupRawPacketMonitoring(receiver: VoiceReceiver, guildId: string) {
-  try {
-    const internalReceiver = (receiver as any);
-    
-    // Save the original onUdpMessage handler
-    const originalOnUdpMessage = internalReceiver.onUdpMessage;
-    
-    if (!originalOnUdpMessage) {
-      console.warn('⚠️  Could not find onUdpMessage handler');
-      return;
-    }
-
-    // Replace it with our wrapper that inspects packets
-    internalReceiver.onUdpMessage = function(buffer: Buffer) {
-      // Call the original handler first
-      originalOnUdpMessage.call(this, buffer);
-
-      // Then inspect the packet for RTP sequence numbers
-      if (buffer.length >= 12) {
-        // Extract SSRC from bytes 8-11 of RTP header
-        const ssrc = buffer.readUInt32BE(8);
-        
-        // Get username from SSRC map
-        let username = `User(${ssrc})`;
-        if (internalReceiver.ssrcMap) {
-          for (const [userId, info] of internalReceiver.ssrcMap) {
-            if (info.ssrc === ssrc) {
-              username = info.userId || userId;
-              break;
-            }
-          }
-        }
-
-        // Inspect the packet
-        inspectRTPPacket(buffer, ssrc, username);
-      }
-    };
-
-    console.log(`✅ Raw UDP packet monitoring enabled (via onUdpMessage hook) for guild ${guildId}`);
-  } catch (error) {
-    console.warn(`⚠️  Error setting up raw packet monitoring: ${error}`);
-    console.log('📋 Using timing-based loss detection instead');
-  }
-}
-
 // Get statistics for an SSRC
 function getSSRCStats(ssrc: number) {
   return statsPerSSRC.get(ssrc);
+}
+
+function startPyshark(connection: VoiceConnection, guildId: string): ChildProcess | null {
+  try {
+    // ⚠️ ACCESSING INTERNAL: discord.js doesn't publicly expose the UDP socket
+    // We need the local port so Pyshark knows which traffic is ours.
+    const networkState = (connection.state as any).networking;
+    const udpSocket = networkState?.udp?.socket;
+    
+    if (!udpSocket) {
+      console.warn('❌ Could not find UDP socket information. Pyshark will not start.');
+      return null;
+    }
+
+    // Get the port the bot is listening on locally
+    const localPort = udpSocket.address().port;
+    console.log(`🔎 Spawning Pyshark monitor for UDP Port: ${localPort}`);
+
+    // Spawn Python process
+    // Ensure 'monitor.py' is in the correct directory relative to where you run the bot
+    const pysharkProcess = spawn('python3', ['monitor.py', localPort.toString()], {
+      stdio: ['ignore', 'pipe', 'pipe'] 
+    });
+
+    pysharkProcess.stdout.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+            const json = JSON.parse(line);
+            if (json.type === 'loss') {
+                console.warn(`⚠️ [Pyshark] Packet Loss Detected (SSRC: ${json.ssrc}): ${json.lost} packets`);
+            } else if (json.type === 'stats') {
+               // Optional: excessively verbose
+               // console.log(`📊 [Pyshark] Stats (SSRC: ${json.ssrc}): Total ${json.total} | Loss ${json.total_loss}`);
+            } else {
+                console.log(`🐍 [Pyshark] ${JSON.stringify(json)}`);
+            }
+        } catch (e) { 
+            // Plain text output
+            console.log(`🐍 [Pyshark] ${line}`);
+        }
+      }
+    });
+
+    pysharkProcess.stderr.on('data', (data) => {
+      console.error(`[Pyshark Error]: ${data}`);
+    });
+
+    return pysharkProcess;
+
+  } catch (error) {
+    console.error('Failed to start Pyshark monitor:', error);
+    return null;
+  }
 }
 
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
@@ -193,7 +160,7 @@ async function createListeningStream(
     // Log statistics every 500 frames (~10 seconds of speech)
     if (totalFrames % 500 === 0) {
       console.log(
-        `[${user.username}] 📊 Audio frames received: ${totalFrames} | ` +
+        `[${user.username}] Audio frames received: ${totalFrames} | ` +
         `Silence gaps: ${totalGapMs}ms`
       );
       
@@ -216,7 +183,7 @@ async function createListeningStream(
 
   // Handle stream errors
   opusStream.on('error', (error) => {
-    console.error(`[${user.username}] ❌ Stream error:`, error);
+    console.error(`[${user.username}] Stream error:`, error);
   });
 
   // Pipe opus stream through decoder to output file
@@ -276,8 +243,16 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const voiceConnection = getVoiceConnection(interaction.guildId)!;
   const receiver = voiceConnection.receiver;
 
-  // Setup raw UDP packet monitoring - hook into onUdpMessage
-  setupRawPacketMonitoring(receiver, interaction.guildId);
+  const pythonMonitor = startPyshark(voiceConnection, interaction.guildId!);
+
+  voiceConnection.on('stateChange', (oldState, newState) => {
+      if (newState.status === 'destroyed' || newState.status === 'disconnected') {
+          if (pythonMonitor && !pythonMonitor.killed) {
+              console.log('Killing Pyshark monitor...');
+              pythonMonitor.kill();
+          }
+      }
+  });
 
   // For each user, create a listening stream
   const datenow = Date.now()

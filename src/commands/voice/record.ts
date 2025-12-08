@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { SlashCommandBuilder, ChatInputCommandInteraction, User } from 'discord.js';
-import { EndBehaviorType, getVoiceConnection, VoiceReceiver } from '@discordjs/voice'
+import { EndBehaviorType, getVoiceConnection, VoiceReceiver, VoiceConnection } from '@discordjs/voice'
 import { recordings, Recording, logRecordings } from '../utility/recordings.js';
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -35,35 +35,114 @@ const data = new SlashCommandBuilder()
     .setName('user6')
     .setDescription('User to be recorded'))
 
-// Track our own sequence numbers to detect if Discord.js drops packets
-const sequencePerUser = new Map<string, number>();
-// Track statistics per user
-const statsPerUser = new Map<string, { totalPackets: number; expectedPackets: number }>();
+// Track RTP sequence numbers per SSRC (Synchronization Source)
+const lastRtpSeqPerSSRC = new Map<number, number>();
+// Track statistics per SSRC
+const statsPerSSRC = new Map<number, { 
+  totalPackets: number; 
+  lostPackets: number;
+  username: string;
+}>();
 
-// Track packets using timing-based loss detection
-function trackPacket(userId: string, timestamp: number): { seq: number; estimatedLoss: number } {
-  // Initialize stats if first packet from this user
-  if (!statsPerUser.has(userId)) {
-    statsPerUser.set(userId, { totalPackets: 0, expectedPackets: 0 });
-    sequencePerUser.set(userId, 0);
+// Inspect raw RTP packet from UDP socket
+function inspectRTPPacket(buffer: Buffer, ssrc: number, username: string): { seq: number; loss: number } {
+  // RTP header structure:
+  // byte 0: V(2), P(1), X(1), CC(4)
+  // byte 1: M(1), PT(7)
+  // byte 2-3: Sequence number (16-bit big-endian)
+  // byte 4-7: Timestamp (32-bit big-endian)
+  // byte 8-11: SSRC (32-bit big-endian)
+
+  if (buffer.length < 12) {
+    return { seq: 0, loss: 0 };
   }
 
-  const stats = statsPerUser.get(userId)!;
-  const currentSeq = sequencePerUser.get(userId)!;
-  
+  const seq = buffer.readUInt16BE(2);
+
+  // Initialize stats if first packet from this SSRC
+  if (!statsPerSSRC.has(ssrc)) {
+    statsPerSSRC.set(ssrc, { totalPackets: 0, lostPackets: 0, username });
+    lastRtpSeqPerSSRC.set(ssrc, seq);
+    return { seq, loss: 0 };
+  }
+
+  const stats = statsPerSSRC.get(ssrc)!;
   stats.totalPackets++;
-  sequencePerUser.set(userId, currentSeq + 1);
 
-  // Discord sends packets every ~20ms when speaking
-  // We can estimate loss by comparing timing gaps
-  let estimatedLoss = 0;
+  let loss = 0;
+  const prevSeq = lastRtpSeqPerSSRC.get(ssrc)!;
 
-  return { seq: currentSeq, estimatedLoss };
+  // Check for packet loss by comparing sequence numbers
+  const expected = (prevSeq + 1) & 0xFFFF;
+  
+  if (seq !== expected) {
+    // Calculate packets lost (accounting for wraparound)
+    loss = (seq - expected) & 0xFFFF;
+    
+    if (loss > 0 && loss < 100) {
+      stats.lostPackets += loss;
+      console.warn(
+        `⚠️  [${username}] RTP packet loss detected! Expected seq: ${expected}, Got: ${seq}, Lost: ${loss} packets`
+      );
+    }
+  }
+
+  lastRtpSeqPerSSRC.set(ssrc, seq);
+
+  return { seq, loss };
 }
 
-// Get statistics for a user
-function getUserStats(userId: string) {
-  return statsPerUser.get(userId);
+// Hook into raw UDP packets before Discord.js processes them
+function setupRawPacketMonitoring(voiceConnection: VoiceConnection, guildId: string) {
+  try {
+    // Access the internal UDP socket from the voice connection
+    // This is undocumented but works with @discordjs/voice
+    const internalConnection = (voiceConnection as any);
+    const udpSocket = internalConnection.udp?.socket;
+
+    if (!udpSocket) {
+      console.warn('⚠️  Could not access raw UDP socket for packet monitoring');
+      return;
+    }
+
+    // Listen to raw UDP messages before Discord.js processes them
+    const originalOnMessage = udpSocket.onMessage || udpSocket.on.bind(udpSocket, 'message');
+    
+    if (udpSocket.on) {
+      udpSocket.on('message', (buffer: Buffer, rinfo: any) => {
+        // Skip if buffer too small for RTP header
+        if (buffer.length < 12) return;
+
+        // Extract SSRC from bytes 8-11 of RTP header
+        const ssrc = buffer.readUInt32BE(8);
+
+        // Get username from SSRC (from receiver's ssrcMap)
+        const receiver = voiceConnection.receiver;
+        let username = `User(${ssrc})`;
+        
+        if (receiver && (receiver as any).ssrcMap) {
+          for (const [userId, info] of (receiver as any).ssrcMap) {
+            if (info.ssrc === ssrc) {
+              username = info.userId || userId;
+              break;
+            }
+          }
+        }
+
+        // Inspect the RTP packet
+        inspectRTPPacket(buffer, ssrc, username);
+      });
+    }
+
+    console.log(`✅ Raw UDP packet monitoring enabled for guild ${guildId}`);
+  } catch (error) {
+    console.warn(`⚠️  Could not setup raw packet monitoring: ${error}`);
+  }
+}
+
+// Get statistics for an SSRC
+function getSSRCStats(ssrc: number) {
+  return statsPerSSRC.get(ssrc);
 }
 
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
@@ -72,7 +151,8 @@ async function createListeningStream(
   user: User,
   guildId: string,
   channelId: string,
-  datenow: string
+  datenow: string,
+  voiceConnection: VoiceConnection
 ) {
   // Subscribe to the user's audio stream
   const opusStream = receiver.subscribe(user.id, {
@@ -97,41 +177,23 @@ async function createListeningStream(
   let totalFrames = 0;
   let lastFrameTime = 0;
   let totalGapMs = 0;
-  let estimatedLostFrames = 0;
   
-  console.log(`[${user.username}] 🎙️  Started monitoring incoming packets from Discord`);
+  console.log(`[${user.username}] 🎙️  Started recording`);
   console.log(`[${user.username}] 💾 Saving to: ${filePath}`);
-  console.log(`[${user.username}] ⚠️  Note: Discord.js strips RTP headers - using timing-based loss detection`);
   
   // Handle each incoming packet from Discord
   opusStream.on('data', (chunk: Buffer) => {
     const now = Date.now();
     totalFrames++;
 
-    // Track this packet (can't read RTP headers since Discord.js strips them)
-    const { seq } = trackPacket(user.id, now);
-
-    // Handle silence gaps (when user stops speaking and resumes)
-    // Also use this to estimate packet loss
+    // Handle silence gaps
     if (lastFrameTime > 0) {
       const delta = now - lastFrameTime;
       
-      // If gap is significantly larger than 20ms, we might have lost packets
       if (delta > 40) {
         const estimatedMissing = Math.floor(delta / 20) - 1;
-        if (estimatedMissing > 0) {
-          estimatedLostFrames += estimatedMissing;
+        if (estimatedMissing > 0 && estimatedMissing < 50) {
           totalGapMs += delta - 20;
-          
-          // Only warn if it's not a huge gap (huge gaps = silence, not loss)
-          if (estimatedMissing < 50) {
-            console.warn(
-              `⚠️  [${user.username}] Possible packet loss! Gap: ${delta}ms, ` +
-              `Estimated missing frames: ${estimatedMissing}`
-            );
-          }
-          
-          // Create silence buffer and write to output
           const silence = Buffer.alloc(estimatedMissing * 960 * 2 * 2, 0);
           outputStream.write(silence);
         }
@@ -140,18 +202,25 @@ async function createListeningStream(
 
     // Log statistics every 500 frames (~10 seconds of speech)
     if (totalFrames % 500 === 0) {
-      const stats = getUserStats(user.id);
-      if (stats) {
-        const totalExpected = stats.totalPackets + estimatedLostFrames;
-        const successRate = totalExpected > 0
-          ? (stats.totalPackets / totalExpected) * 100
-          : 100;
-        
-        console.log(
-          `[${user.username}] 📊 Stats - Received: ${stats.totalPackets} | ` +
-          `Estimated lost: ${estimatedLostFrames} | Success: ${successRate.toFixed(2)}% | ` +
-          `Total gaps: ${totalGapMs}ms`
-        );
+      console.log(
+        `[${user.username}] 📊 Local frames received: ${totalFrames} | ` +
+        `Silence gaps: ${totalGapMs}ms`
+      );
+      
+      // Also print RTP-level stats if available
+      const ssrcInfo = (receiver as any).ssrcMap?.get(user.id);
+      if (ssrcInfo) {
+        const rtpStats = getSSRCStats(ssrcInfo.ssrc);
+        if (rtpStats) {
+          const successRate = rtpStats.totalPackets > 0
+            ? ((rtpStats.totalPackets - rtpStats.lostPackets) / rtpStats.totalPackets) * 100
+            : 100;
+          
+          console.log(
+            `[${user.username}] 📡 RTP-level: Received ${rtpStats.totalPackets} | ` +
+            `Lost: ${rtpStats.lostPackets} | Success: ${successRate.toFixed(2)}%`
+          );
+        }
       }
     }
     
@@ -217,18 +286,23 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   await interaction.reply(`Recording users: \n${users.map(u => `<@${u.id}>`).join(',\n')}`)
 
-  const receiver = getVoiceConnection(interaction.guildId)!.receiver
+  const voiceConnection = getVoiceConnection(interaction.guildId)!;
+  const receiver = voiceConnection.receiver;
+
+  // Setup raw UDP packet monitoring
+  setupRawPacketMonitoring(voiceConnection, interaction.guildId);
 
   // For each user, create a listening stream
-  const datenow = Date.now()// required to make all recordings have same UNIX time
+  const datenow = Date.now()
   for (const user of users) {
     console.log(`Listening to ${user.username}`)
     createListeningStream(
       receiver,
       user,
       interaction.guildId,
-      interaction.guild.members.me.voice.channel.id,
-      datenow.toString()
+      interaction.guild.members.me!.voice.channel!.id,
+      datenow.toString(),
+      voiceConnection
     );
   }
 }

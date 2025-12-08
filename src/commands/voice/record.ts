@@ -44,7 +44,7 @@ const statsPerSSRC = new Map<number, {
   username: string;
 }>();
 
-// Inspect raw RTP packet from UDP socket
+// Inspect raw RTP packet from UDP message
 function inspectRTPPacket(buffer: Buffer, ssrc: number, username: string): { seq: number; loss: number } {
   if (buffer.length < 12) {
     return { seq: 0, loss: 0 };
@@ -85,97 +85,46 @@ function inspectRTPPacket(buffer: Buffer, ssrc: number, username: string): { seq
   return { seq, loss };
 }
 
-// Inspect the internal voice connection structure
-function debugVoiceConnection(voiceConnection: VoiceConnection) {
-  const internal = (voiceConnection as any);
-  
-  console.log('\n🔍 Debugging Voice Connection Structure:');
-  console.log('Available properties:', Object.keys(internal).filter(k => !k.startsWith('_')));
-  
-  if (internal.state) {
-    console.log('State:', Object.keys(internal.state));
-  }
-  
-  if (internal.receiver) {
-    console.log('Receiver available:', true);
-    const recInternal = (internal.receiver as any);
-    console.log('Receiver properties:', Object.keys(recInternal).filter(k => !k.startsWith('_')));
-  }
-  
-  if (internal.subscription) {
-    console.log('Subscription available:', true);
-  }
-}
-
-// Hook into receiver's packet handler - alternative approach
-function setupRawPacketMonitoring(receiver: VoiceReceiver, voiceConnection: VoiceConnection, guildId: string) {
+// Hook into receiver's onUdpMessage to monitor raw packets
+function setupRawPacketMonitoring(receiver: VoiceReceiver, guildId: string) {
   try {
-    // Debug the structure first
-    debugVoiceConnection(voiceConnection);
-
     const internalReceiver = (receiver as any);
-    const internalVoiceConn = (voiceConnection as any);
     
-    // Try to find and hook into the udp socket's message handler
-    // Check various possible locations where UDP socket might be stored
-    const possibleSocketLocations = [
-      () => internalVoiceConn.state?.subscription?.connection?.udp?.socket,
-      () => internalVoiceConn.state?.connection?.udp?.socket,
-      () => internalVoiceConn.state?.udp?.socket,
-      () => internalReceiver.udp?.socket,
-      () => internalVoiceConn.udp?.socket,
-    ];
-
-    let socket = null;
-    for (const getSocket of possibleSocketLocations) {
-      try {
-        socket = getSocket();
-        if (socket) {
-          console.log('✅ Found UDP socket!');
-          break;
-        }
-      } catch (e) {
-        // continue
-      }
-    }
-
-    if (socket && socket.on) {
-      const originalHandler = socket.listeners('message').length > 0 
-        ? socket.listeners('message')[0] 
-        : null;
-
-      socket.removeAllListeners('message');
-      
-      socket.on('message', (buffer: Buffer, rinfo: any) => {
-        // Call original handler if exists
-        if (originalHandler) {
-          originalHandler(buffer, rinfo);
-        }
-
-        // Process for packet loss detection
-        if (buffer.length >= 12) {
-          const ssrc = buffer.readUInt32BE(8);
-          let username = `User(${ssrc})`;
-          
-          if (internalReceiver.ssrcMap) {
-            for (const [userId, info] of internalReceiver.ssrcMap) {
-              if (info.ssrc === ssrc) {
-                username = info.userId || userId;
-                break;
-              }
-            }
-          }
-          
-          inspectRTPPacket(buffer, ssrc, username);
-        }
-      });
-
-      console.log(`✅ Raw packet monitoring enabled (via UDP socket hook) for guild ${guildId}`);
+    // Save the original onUdpMessage handler
+    const originalOnUdpMessage = internalReceiver.onUdpMessage;
+    
+    if (!originalOnUdpMessage) {
+      console.warn('⚠️  Could not find onUdpMessage handler');
       return;
     }
 
-    console.warn('⚠️  Could not find UDP socket for packet monitoring');
-    console.log('📋 Using timing-based loss detection instead');
+    // Replace it with our wrapper that inspects packets
+    internalReceiver.onUdpMessage = function(buffer: Buffer) {
+      // Call the original handler first
+      originalOnUdpMessage.call(this, buffer);
+
+      // Then inspect the packet for RTP sequence numbers
+      if (buffer.length >= 12) {
+        // Extract SSRC from bytes 8-11 of RTP header
+        const ssrc = buffer.readUInt32BE(8);
+        
+        // Get username from SSRC map
+        let username = `User(${ssrc})`;
+        if (internalReceiver.ssrcMap) {
+          for (const [userId, info] of internalReceiver.ssrcMap) {
+            if (info.ssrc === ssrc) {
+              username = info.userId || userId;
+              break;
+            }
+          }
+        }
+
+        // Inspect the packet
+        inspectRTPPacket(buffer, ssrc, username);
+      }
+    };
+
+    console.log(`✅ Raw UDP packet monitoring enabled (via onUdpMessage hook) for guild ${guildId}`);
   } catch (error) {
     console.warn(`⚠️  Error setting up raw packet monitoring: ${error}`);
     console.log('📋 Using timing-based loss detection instead');
@@ -193,8 +142,7 @@ async function createListeningStream(
   user: User,
   guildId: string,
   channelId: string,
-  datenow: string,
-  voiceConnection: VoiceConnection
+  datenow: string
 ) {
   // Subscribe to the user's audio stream
   const opusStream = receiver.subscribe(user.id, {
@@ -219,7 +167,6 @@ async function createListeningStream(
   let totalFrames = 0;
   let lastFrameTime = 0;
   let totalGapMs = 0;
-  let estimatedLostFrames = 0;
   
   console.log(`[${user.username}] 🎙️  Started recording`);
   console.log(`[${user.username}] 💾 Saving to: ${filePath}`);
@@ -229,14 +176,13 @@ async function createListeningStream(
     const now = Date.now();
     totalFrames++;
 
-    // Handle silence gaps and estimate packet loss
+    // Handle silence gaps
     if (lastFrameTime > 0) {
       const delta = now - lastFrameTime;
       
       if (delta > 40) {
         const estimatedMissing = Math.floor(delta / 20) - 1;
         if (estimatedMissing > 0 && estimatedMissing < 50) {
-          estimatedLostFrames += estimatedMissing;
           totalGapMs += delta - 20;
           const silence = Buffer.alloc(estimatedMissing * 960 * 2 * 2, 0);
           outputStream.write(silence);
@@ -246,14 +192,8 @@ async function createListeningStream(
 
     // Log statistics every 500 frames (~10 seconds of speech)
     if (totalFrames % 500 === 0) {
-      const totalExpected = totalFrames + estimatedLostFrames;
-      const successRate = totalExpected > 0 
-        ? ((totalFrames / totalExpected) * 100).toFixed(2)
-        : '100.00';
-      
       console.log(
-        `[${user.username}] 📊 Received: ${totalFrames} | ` +
-        `Estimated lost: ${estimatedLostFrames} | Success: ${successRate}% | ` +
+        `[${user.username}] 📊 Audio frames received: ${totalFrames} | ` +
         `Silence gaps: ${totalGapMs}ms`
       );
       
@@ -336,8 +276,8 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const voiceConnection = getVoiceConnection(interaction.guildId)!;
   const receiver = voiceConnection.receiver;
 
-  // Setup raw UDP packet monitoring
-  setupRawPacketMonitoring(receiver, voiceConnection, interaction.guildId);
+  // Setup raw UDP packet monitoring - hook into onUdpMessage
+  setupRawPacketMonitoring(receiver, interaction.guildId);
 
   // For each user, create a listening stream
   const datenow = Date.now()
@@ -348,8 +288,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
       user,
       interaction.guildId,
       interaction.guild.members.me!.voice.channel!.id,
-      datenow.toString(),
-      voiceConnection
+      datenow.toString()
     );
   }
 }

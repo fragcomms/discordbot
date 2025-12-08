@@ -1,16 +1,14 @@
 import sys
 import pyshark
 import json
+import time
 
 def start_monitoring(interface, local_port):
-    # Filter for UDP traffic on the specific port
     bpf_filter = f'udp port {local_port}'
     
-    print(f"{{ \"status\": \"started\", \"port\": {local_port}, \"msg\": \"Pyshark monitor running...\" }}")
+    print(json.dumps({ "status": "started", "port": local_port, "msg": "Pyshark monitor running (Time & Seq Tracking)..." }))
     sys.stdout.flush()
 
-    # 1. REMOVED display_filter='rtp' (It was filtering out unrecognized packets)
-    # 2. ADDED decode_as (Forces TShark to interpret this port's UDP as RTP)
     capture = pyshark.LiveCapture(
         interface=interface, 
         bpf_filter=bpf_filter,
@@ -21,59 +19,68 @@ def start_monitoring(interface, local_port):
 
     try:
         for packet in capture.sniff_continuously():
-            # Debug print to confirm raw packets are hitting the script
-            # print(json.dumps({"type": "debug", "msg": f"Packet received! Layers: {packet.layers}"}))
-            # sys.stdout.flush()
-
             try:
-                # If decode_as works, 'packet.rtp' will now exist
                 if not hasattr(packet, 'rtp'):
                     continue
 
                 rtp = packet.rtp
                 ssrc = getattr(rtp, 'ssrc', None)
-                seq_raw = getattr(rtp, 'seq', 0)
+                seq = int(getattr(rtp, 'seq', 0))
                 
-                # Convert to int (TShark sometimes returns strings)
-                seq = int(seq_raw)
+                # Get current time in milliseconds
+                current_time_ms = time.time() * 1000 
                 
                 if not ssrc:
                     continue
 
                 if ssrc not in stats:
-                    stats[ssrc] = {'last_seq': seq, 'packets': 0, 'loss': 0}
-
-                # Simple Loss Logic
-                last_seq = stats[ssrc]['last_seq']
-                diff = (seq - last_seq) & 0xFFFF 
+                    stats[ssrc] = {
+                        'highest_seq': seq, 
+                        'last_arrival_time': current_time_ms,
+                        'packets': 0
+                    }
                 
-                if diff > 1:
-                    loss_event = diff - 1
-                    if loss_event < 50:
-                        stats[ssrc]['loss'] += loss_event
-                        print(json.dumps({
-                            "type": "loss", 
-                            "ssrc": ssrc, 
-                            "lost": loss_event,
-                            "seq": seq
-                        }))
-                        sys.stdout.flush()
-
-                stats[ssrc]['last_seq'] = seq
-                stats[ssrc]['packets'] += 1
-
-                if stats[ssrc]['packets'] % 50 == 0:
+                user = stats[ssrc]
+                
+                # --- TIME GAP DETECTION (NEW) ---
+                time_diff = current_time_ms - user['last_arrival_time']
+                
+                # If packet arrived more than 200ms after the previous one
+                # (Standard RTP packets come every 20ms)
+                if time_diff > 200:
                     print(json.dumps({
-                        "type": "stats",
-                        "ssrc": ssrc,
-                        "total": stats[ssrc]['packets'],
-                        "total_loss": stats[ssrc]['loss']
+                        "type": "latency_spike", 
+                        "ssrc": ssrc, 
+                        "gap_ms": int(time_diff),
+                        "seq_now": seq,
+                        "seq_prev": user['highest_seq']
                     }))
                     sys.stdout.flush()
 
-            except Exception as e:
-                # Only print actual errors, ignore expected parsing issues
-                # print(f"Error processing packet: {e}")
+                user['last_arrival_time'] = current_time_ms
+                user['packets'] += 1
+
+                # --- SEQUENCE LOSS DETECTION ---
+                if seq <= user['highest_seq']:
+                     # Handle duplicates/reordering silently
+                    pass
+                else:
+                    diff = (seq - user['highest_seq']) & 0xFFFF 
+                    if diff > 1:
+                        loss_event = diff - 1
+                        if loss_event < 3000:
+                            print(json.dumps({
+                                "type": "loss", 
+                                "ssrc": ssrc, 
+                                "lost": loss_event,
+                                "seq_now": seq,
+                                "seq_prev": user['highest_seq']
+                            }))
+                            sys.stdout.flush()
+                
+                user['highest_seq'] = seq
+
+            except Exception:
                 pass
 
     except KeyboardInterrupt:

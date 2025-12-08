@@ -55,7 +55,7 @@ def start_monitoring(interface, local_port):
                 if audio_diff_ms > 80:
                     print(json.dumps({
                         "type": "debug", 
-                        "ssrc": ssrc,   # 👈 ADDED SSRC HERE
+                        "ssrc": ssrc,
                         "msg": "Silence gap detected (Resetting Jitter)",
                         "gap_ms": int(audio_diff_ms)
                     }))
@@ -68,10 +68,9 @@ def start_monitoring(interface, local_port):
                 # --- JITTER CALCULATION ---
                 jitter = wall_diff - audio_diff_ms
 
-                # 👇 VERBOSE LOGGING: Print EVERY packet's stats
                 print(json.dumps({
                     "type": "jitter_debug", 
-                    "ssrc": ssrc,       # 👈 ADDED SSRC HERE
+                    "ssrc": ssrc, 
                     "seq": seq,
                     "wall_diff": round(wall_diff, 2),
                     "audio_diff": round(audio_diff_ms, 2),

@@ -59,7 +59,7 @@ function getLocalUdpPort(connection: VoiceConnection): number | null {
   const networking = state.networking || state._networking;
   if (!networking) return null;
 
-  // 3. 🛠️ DEEP DIVE: Access the private _state inside networking
+  // 3. ðŸ› ï¸ DEEP DIVE: Access the private _state inside networking
   // The logs showed 'networking' has a '_state' property.
   const internalState = networking.state || networking._state;
 
@@ -91,7 +91,7 @@ function getLocalUdpPort(connection: VoiceConnection): number | null {
   }
 }
 
-// 👇 Updated Signature: Now accepts 'users' array
+// ðŸ‘‡ Updated Signature: Now accepts 'users' array
 async function startPyshark(connection: VoiceConnection, guildId: string, users: User[]): Promise<ChildProcess | null> {
   try {
     if (connection.state.status !== VoiceConnectionStatus.Ready) {
@@ -110,13 +110,17 @@ async function startPyshark(connection: VoiceConnection, guildId: string, users:
       return null;
     }
 
-    console.log(`UDP Socket found! Spawning Pyshark monitor on port: ${localPort}`);
+    console.log(`UDP Socket found: ${localPort}`);
 
     const pythonPath = path.resolve(process.cwd(), 'src', 'commands', 'voice', 'networking', '.venv', 'bin', 'python');
     const scriptPath = path.resolve(process.cwd(), 'src', 'commands', 'voice', 'networking', 'monitor.py');
-    
+
+    // Check if files exist before spawning
+    if (!fs.existsSync(pythonPath)) console.error(`Python not found at: ${pythonPath}`);
+    if (!fs.existsSync(scriptPath)) console.error(`Monitor script not found at: ${scriptPath}`);
+
     const pysharkProcess = spawn(pythonPath, [scriptPath, localPort.toString()], {
-      stdio: ['ignore', 'pipe', 'pipe'] 
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
     const receiver = connection.receiver;
@@ -125,47 +129,34 @@ async function startPyshark(connection: VoiceConnection, guildId: string, users:
       const lines = data.toString().split('\n');
       for (const line of lines) {
         if (!line.trim()) continue;
+
+        // 1️⃣ RAW DEBUG: Print EVERYTHING from Python to confirm it's working
+        // Once we see this working, we can comment it out.
+        // console.log(`[RAW PYTHON]: ${line}`); 
+
         try {
-            const json = JSON.parse(line);
-            
-            // 🛑 If the log has no SSRC (like startup messages), ignore it
-            if (!json.ssrc) {
-                 // console.log(`[System] ${line}`);
-                 continue;
-            }
+          const json = JSON.parse(line);
 
-            // 🔍 FILTER: Check if this packet belongs to any of our target users
-            for (const user of users) {
-                const ssrcInfo = (receiver as any).ssrcMap?.get(user.id);
-                
-                if (ssrcInfo) {
-                    // Pyshark sends SSRC as Hex String (e.g. "0x98a12")
-                    // Discord sends SSRC as Number (e.g. 625170)
-                    // We parse the Hex to Number to compare them
-                    const pysharkSSRC = parseInt(json.ssrc, 16);
-                    
-                    if (pysharkSSRC === ssrcInfo.ssrc) {
-                        // ✅ MATCH FOUND: Print the log with the username
-                        if (json.type === 'loss') {
-                            console.log(`🔴 [${user.username}] Packet Loss detected: ${json.lost} packets`);
-                        } else if (json.type === 'jitter_debug') {
-                             console.log(`📊 [${user.username}] Seq: ${json.seq} | Jitter: ${json.jitter}ms`);
-                        } else {
-                            console.log(`ℹ️ [${user.username}] ${JSON.stringify(json)}`);
-                        }
-                        break; // Stop checking other users for this packet
-                    }
-                }
-            }
+          // 2️⃣ CHECK SSRC MAPPING
+          // If the log has an SSRC, let's see if our Receiver knows about it.
+          if (json.ssrc) {
+            const pysharkSSRC = parseInt(json.ssrc, 16); // Convert Hex to Int
 
-        } catch (e) { 
-            // console.log(`[Raw] ${line}`);
+            // print it generically so we know data is flowing
+            console.log(`[SSRC: ${json.ssrc}] Jitter: ${json.jitter} Sequence: ${json.seq}`);
+          } else {
+            // System message (Started, etc)
+            console.log(`[System] ${JSON.stringify(json)}`);
+          }
+
+        } catch (e) {
+          console.log(`[Parse Error] ${line}`);
         }
       }
     });
 
     pysharkProcess.stderr.on('data', (data) => {
-      console.error(`[Pyshark Error]: ${data}`);
+      console.error(`[Pyshark Stderr]: ${data}`);
     });
 
     return pysharkProcess;

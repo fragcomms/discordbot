@@ -66,7 +66,7 @@ function startPyshark(connection: VoiceConnection, guildId: string): ChildProces
 
     // Spawn Python process
     // Ensure 'monitor.py' is in the correct directory relative to where you run the bot
-    const pysharkProcess = spawn('python3', ['monitor.py', localPort.toString()], {
+    const pysharkProcess = spawn('./networking/.venv/bin/python', ['monitor.py', localPort.toString()], {
       stdio: ['ignore', 'pipe', 'pipe'] 
     });
 

@@ -35,54 +35,30 @@ const data = new SlashCommandBuilder()
     .setName('user6')
     .setDescription('User to be recorded'))
 
-// Track last RTP sequence number per user to detect incoming packet loss
-const lastRtpSeqPerUser = new Map<string, number>();
+// Track our own sequence numbers to detect if Discord.js drops packets
+const sequencePerUser = new Map<string, number>();
 // Track statistics per user
-const statsPerUser = new Map<string, { totalPackets: number; lostPackets: number }>();
+const statsPerUser = new Map<string, { totalPackets: number; expectedPackets: number }>();
 
-// Inspect incoming RTP packet from Discord for sequence number
-function inspectIncomingPacket(buffer: Buffer, userId: string): { seq: number; loss: number } {
-  // RTP header in Discord voice packets:
-  // byte 2-3 = sequence number (16-bit big-endian)
-  const seq = buffer.readUInt16BE(2);
-
+// Track packets using timing-based loss detection
+function trackPacket(userId: string, timestamp: number): { seq: number; estimatedLoss: number } {
   // Initialize stats if first packet from this user
   if (!statsPerUser.has(userId)) {
-    statsPerUser.set(userId, { totalPackets: 0, lostPackets: 0 });
+    statsPerUser.set(userId, { totalPackets: 0, expectedPackets: 0 });
+    sequencePerUser.set(userId, 0);
   }
 
   const stats = statsPerUser.get(userId)!;
+  const currentSeq = sequencePerUser.get(userId)!;
+  
   stats.totalPackets++;
+  sequencePerUser.set(userId, currentSeq + 1);
 
-  let loss = 0;
-  const prevSeq = lastRtpSeqPerUser.get(userId);
+  // Discord sends packets every ~20ms when speaking
+  // We can estimate loss by comparing timing gaps
+  let estimatedLoss = 0;
 
-  // Check for packet loss by comparing sequence numbers
-  if (prevSeq !== undefined) {
-    // Expected sequence is previous + 1, wrapping at 65535
-    const expected = (prevSeq + 1) & 0xFFFF;
-    
-    if (seq !== expected) {
-      // Calculate packets lost (accounting for wraparound)
-      loss = (seq - expected) & 0xFFFF;
-      
-      // Only count reasonable loss (filters out huge gaps from long silence)
-      if (loss > 0 && loss < 100) {
-        stats.lostPackets += loss;
-        console.warn(
-          `⚠️  [${userId}] Incoming packet loss from Discord! Expected seq: ${expected}, Got: ${seq}, Lost: ${loss}`
-        );
-      } else {
-        // Reset if gap is too large (probably silence/reconnection)
-        loss = 0;
-      }
-    }
-  }
-
-  // Store this sequence number for next comparison
-  lastRtpSeqPerUser.set(userId, seq);
-
-  return { seq, loss };
+  return { seq: currentSeq, estimatedLoss };
 }
 
 // Get statistics for a user
@@ -121,28 +97,44 @@ async function createListeningStream(
   let totalFrames = 0;
   let lastFrameTime = 0;
   let totalGapMs = 0;
+  let estimatedLostFrames = 0;
   
   console.log(`[${user.username}] 🎙️  Started monitoring incoming packets from Discord`);
   console.log(`[${user.username}] 💾 Saving to: ${filePath}`);
+  console.log(`[${user.username}] ⚠️  Note: Discord.js strips RTP headers - using timing-based loss detection`);
   
   // Handle each incoming packet from Discord
   opusStream.on('data', (chunk: Buffer) => {
     const now = Date.now();
     totalFrames++;
 
-    // Inspect the incoming RTP packet from Discord for sequence number
-    const { seq, loss } = inspectIncomingPacket(chunk, user.id);
+    // Track this packet (can't read RTP headers since Discord.js strips them)
+    const { seq } = trackPacket(user.id, now);
 
     // Handle silence gaps (when user stops speaking and resumes)
+    // Also use this to estimate packet loss
     if (lastFrameTime > 0) {
       const delta = now - lastFrameTime;
-      // If more than 40ms gap, insert silence frames
-      const missingFrames = Math.floor(delta / 20) - 1;
-      if (missingFrames > 0) {
-        totalGapMs += delta - 20;
-        // Create silence buffer and write to output
-        const silence = Buffer.alloc(missingFrames * 960 * 2 * 2, 0);
-        outputStream.write(silence);
+      
+      // If gap is significantly larger than 20ms, we might have lost packets
+      if (delta > 40) {
+        const estimatedMissing = Math.floor(delta / 20) - 1;
+        if (estimatedMissing > 0) {
+          estimatedLostFrames += estimatedMissing;
+          totalGapMs += delta - 20;
+          
+          // Only warn if it's not a huge gap (huge gaps = silence, not loss)
+          if (estimatedMissing < 50) {
+            console.warn(
+              `⚠️  [${user.username}] Possible packet loss! Gap: ${delta}ms, ` +
+              `Estimated missing frames: ${estimatedMissing}`
+            );
+          }
+          
+          // Create silence buffer and write to output
+          const silence = Buffer.alloc(estimatedMissing * 960 * 2 * 2, 0);
+          outputStream.write(silence);
+        }
       }
     }
 
@@ -150,19 +142,25 @@ async function createListeningStream(
     if (totalFrames % 500 === 0) {
       const stats = getUserStats(user.id);
       if (stats) {
-        const successRate = stats.totalPackets > 0
-          ? ((stats.totalPackets - stats.lostPackets) / stats.totalPackets) * 100
+        const totalExpected = stats.totalPackets + estimatedLostFrames;
+        const successRate = totalExpected > 0
+          ? (stats.totalPackets / totalExpected) * 100
           : 100;
         
         console.log(
-          `[${user.username}] 📊 Incoming Stats - Received: ${stats.totalPackets} | ` +
-          `Lost: ${stats.lostPackets} | Success: ${successRate.toFixed(2)}% | ` +
-          `Silence gaps: ${totalGapMs}ms`
+          `[${user.username}] 📊 Stats - Received: ${stats.totalPackets} | ` +
+          `Estimated lost: ${estimatedLostFrames} | Success: ${successRate.toFixed(2)}% | ` +
+          `Total gaps: ${totalGapMs}ms`
         );
       }
     }
     
     lastFrameTime = now;
+  });
+
+  // Handle stream errors
+  opusStream.on('error', (error) => {
+    console.error(`[${user.username}] ❌ Stream error:`, error);
   });
 
   // Pipe opus stream through decoder to output file

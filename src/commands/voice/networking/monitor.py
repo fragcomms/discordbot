@@ -22,8 +22,8 @@ def start_monitoring(interface, local_port):
     try:
         for packet in capture.sniff_continuously():
             # Debug print to confirm raw packets are hitting the script
-            print(json.dumps({"type": "debug", "msg": f"Packet received! Layers: {packet.layers}"}))
-            sys.stdout.flush()
+            # print(json.dumps({"type": "debug", "msg": f"Packet received! Layers: {packet.layers}"}))
+            # sys.stdout.flush()
 
             try:
                 # If decode_as works, 'packet.rtp' will now exist

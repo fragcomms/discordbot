@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { SlashCommandBuilder, ChatInputCommandInteraction, User } from 'discord.js';
 import { EndBehaviorType, getVoiceConnection, VoiceReceiver, VoiceConnection, VoiceConnectionStatus, entersState } from '@discordjs/voice'
-import { recordings, Recording, logRecordings } from '../utility/recordings.js';
+import { recordings, Recording, logRecordings, monitors } from '../utility/recordings.js';
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as prism from 'prism-media'
@@ -37,8 +37,8 @@ const data = new SlashCommandBuilder()
     .setDescription('User to be recorded'))
 
 // Track statistics per SSRC
-const statsPerSSRC = new Map<number, { 
-  totalPackets: number; 
+const statsPerSSRC = new Map<number, {
+  totalPackets: number;
   lostPackets: number;
   username: string;
 }>();
@@ -49,65 +49,65 @@ function getSSRCStats(ssrc: number) {
 }
 
 function getLocalUdpPort(connection: VoiceConnection): number | null {
-    // 1. Check if the connection is in the Ready state
-    const state = connection.state as any;
-    if (state.status !== VoiceConnectionStatus.Ready) {
-        return null;
-    }
+  // 1. Check if the connection is in the Ready state
+  const state = connection.state as any;
+  if (state.status !== VoiceConnectionStatus.Ready) {
+    return null;
+  }
 
-    // 2. Access the networking object
-    const networking = state.networking || state._networking;
-    if (!networking) return null;
+  // 2. Access the networking object
+  const networking = state.networking || state._networking;
+  if (!networking) return null;
 
-    // 3. 🛠️ DEEP DIVE: Access the private _state inside networking
-    // The logs showed 'networking' has a '_state' property.
-    const internalState = networking.state || networking._state;
-    
-    // Debug log to help if this step fails (you can remove this later)
-    if (internalState) {
-        console.log('Internal State Keys:', Object.keys(internalState));
-    } else {
-        console.warn('Could not find internal networking state');
-    }
+  // 3. 🛠️ DEEP DIVE: Access the private _state inside networking
+  // The logs showed 'networking' has a '_state' property.
+  const internalState = networking.state || networking._state;
 
-    // 4. Try to find the UDP object inside that internal state
-    // It is often usually under 'udp' or inside a 'connection' object depending on the version
-    const udp = networking.udp || networking._udp || internalState?.udp || internalState?._udp;
+  // Debug log to help if this step fails (you can remove this later)
+  if (internalState) {
+    console.log('Internal State Keys:', Object.keys(internalState));
+  } else {
+    console.warn('Could not find internal networking state');
+  }
 
-    if (!udp) {
-        console.warn('UDP object not found in networking or internal state');
-        return null;
-    }
+  // 4. Try to find the UDP object inside that internal state
+  // It is often usually under 'udp' or inside a 'connection' object depending on the version
+  const udp = networking.udp || networking._udp || internalState?.udp || internalState?._udp;
 
-    // 5. Get the socket
-    const socket = udp.socket || udp._socket;
-    if (!socket) return null;
+  if (!udp) {
+    console.warn('UDP object not found in networking or internal state');
+    return null;
+  }
 
-    // 6. Get the port
-    try {
-        return socket.address().port;
-    } catch (e) {
-        return null;
-    }
+  // 5. Get the socket
+  const socket = udp.socket || udp._socket;
+  if (!socket) return null;
+
+  // 6. Get the port
+  try {
+    return socket.address().port;
+  } catch (e) {
+    return null;
+  }
 }
 
 async function startPyshark(connection: VoiceConnection, guildId: string): Promise<ChildProcess | null> {
   try {
     // 1. Ensure connection is Ready before grabbing port
     if (connection.state.status !== VoiceConnectionStatus.Ready) {
-        console.log('Connection not ready yet, waiting for Ready state...');
-        try {
-            // Wait up to 5 seconds for the connection to be ready
-            await entersState(connection, VoiceConnectionStatus.Ready, 5000);
-        } catch (error) {
-            console.error('Connection failed to become Ready within 5s');
-            return null;
-        }
+      console.log('Connection not ready yet, waiting for Ready state...');
+      try {
+        // Wait up to 5 seconds for the connection to be ready
+        await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+      } catch (error) {
+        console.error('Connection failed to become Ready within 5s');
+        return null;
+      }
     }
 
     // 2. Get the port
     const localPort = getLocalUdpPort(connection);
-    
+
     if (!localPort) {
       console.warn('Could not find UDP socket information even after Ready state. Internals might have changed.');
       // Debug: Log keys to help identify structure if it fails
@@ -123,7 +123,7 @@ async function startPyshark(connection: VoiceConnection, guildId: string): Promi
     const scriptPath = path.resolve(process.cwd(), 'src', 'commands', 'voice', 'networking', 'monitor.py');
     // Spawn Python process
     const pysharkProcess = spawn(pythonPath, [scriptPath, localPort.toString()], {
-      stdio: ['ignore', 'pipe', 'pipe'] 
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
     pysharkProcess.stdout.on('data', (data) => {
@@ -131,17 +131,17 @@ async function startPyshark(connection: VoiceConnection, guildId: string): Promi
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
-            const json = JSON.parse(line);
-            if (json.type === 'loss') {
-                console.warn(`[Pyshark] Packet Loss Detected (SSRC: ${json.ssrc}): ${json.lost} packets`);
-            } else if (json.type === 'stats') {
-                // Optional heartbeat logging
-                // console.log(`📊 [Pyshark Status] Total: ${json.total} | Loss: ${json.total_loss}`);
-            } else {
-                console.log(`[Pyshark] ${JSON.stringify(json)}`);
-            }
-        } catch (e) { 
-            console.log(`[Pyshark] ${line}`);
+          const json = JSON.parse(line);
+          if (json.type === 'loss') {
+            console.warn(`[Pyshark] Packet Loss Detected (SSRC: ${json.ssrc}): ${json.lost} packets`);
+          } else if (json.type === 'stats') {
+            // Optional heartbeat logging
+            // console.log(`📊 [Pyshark Status] Total: ${json.total} | Loss: ${json.total_loss}`);
+          } else {
+            console.log(`[Pyshark] ${JSON.stringify(json)}`);
+          }
+        } catch (e) {
+          console.log(`[Pyshark] ${line}`);
         }
       }
     });
@@ -189,10 +189,10 @@ async function createListeningStream(
   let totalFrames = 0;
   let lastFrameTime = 0;
   let totalGapMs = 0;
-  
+
   console.log(`[${user.username}] Started recording`);
   console.log(`[${user.username}] Saving to: ${filePath}`);
-  
+
   // Handle each incoming packet from Discord
   opusStream.on('data', (chunk: Buffer) => {
     const now = Date.now();
@@ -201,7 +201,7 @@ async function createListeningStream(
     // Handle silence gaps
     if (lastFrameTime > 0) {
       const delta = now - lastFrameTime;
-      
+
       if (delta > 40) {
         const estimatedMissing = Math.floor(delta / 20) - 1;
         if (estimatedMissing > 0 && estimatedMissing < 50) {
@@ -211,7 +211,7 @@ async function createListeningStream(
         }
       }
     }
-    
+
     lastFrameTime = now;
   });
 
@@ -265,7 +265,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
     await interaction.reply('Recording already in progress.\nPlease stop current recording before starting another one.')
     return
   }
-  
+
   // Grab all users that were given in command
   const userOptionNames = Array.from({ length: 6 }, (_, i) => `user${i + 1}`)
   const users = userOptionNames
@@ -279,13 +279,19 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   const pythonMonitor = await startPyshark(voiceConnection, interaction.guildId!);
 
+  if (pythonMonitor) {
+    monitors.set(interaction.guildId!, pythonMonitor);
+  }
+
   voiceConnection.on('stateChange', (oldState, newState) => {
-      if (newState.status === 'destroyed' || newState.status === 'disconnected') {
-          if (pythonMonitor && !pythonMonitor.killed) {
-              console.log('Killing Pyshark monitor...');
-              pythonMonitor.kill();
-          }
+    if (newState.status === VoiceConnectionStatus.Destroyed || newState.status === VoiceConnectionStatus.Disconnected) {
+      const monitor = monitors.get(interaction.guildId!);
+      if (monitor && !monitor.killed) {
+        console.log('Connection died, killing Pyshark monitor...');
+        monitor.kill();
+        monitors.delete(interaction.guildId!);
       }
+    }
   });
 
   // For each user, create a listening stream

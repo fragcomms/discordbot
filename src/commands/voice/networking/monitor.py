@@ -5,10 +5,11 @@ import json
 def start_monitoring(interface, local_port):
     bpf_filter = f'udp port {local_port}'
     
+    # Send initial status
     print(json.dumps({ "status": "started", "port": local_port, "msg": "Pyshark monitor running..." }))
     sys.stdout.flush()
 
-    # Force decode as RTP
+    # Capture with RTP decoding forced
     capture = pyshark.LiveCapture(
         interface=interface, 
         bpf_filter=bpf_filter,
@@ -25,61 +26,73 @@ def start_monitoring(interface, local_port):
 
                 rtp = packet.rtp
                 ssrc = getattr(rtp, 'ssrc', None)
-                seq = int(getattr(rtp, 'seq', 0))
+                seq_raw = getattr(rtp, 'seq', 0)
                 
                 if not ssrc:
                     continue
+                
+                # Convert seq to int
+                seq = int(seq_raw)
 
                 if ssrc not in stats:
-                    # Initialize user stats
+                    # Initialize with the first sequence number we see
                     stats[ssrc] = {
                         'highest_seq': seq, 
                         'packets': 0, 
-                        'loss_count': 0,
-                        'window': set() # Store recently seen packets to handle out-of-order
+                        'loss_cumulative': 0
                     }
                 
                 user = stats[ssrc]
                 user['packets'] += 1
 
-                # 1. Handle Duplicate / Old Packets
-                if seq <= user['highest_seq']:
-                    # If packet is very old (sequence wrapped or huge lag), ignore
-                    # If it's just a bit old, it's an out-of-order packet we already counted as "lost"
-                    # We could technically decrement loss count here, but for simple monitoring, we just ignore it.
-                    continue
+                # --- IMPROVED LOGIC START ---
 
-                # 2. Calculate Gap
-                diff = (seq - user['highest_seq']) & 0xFFFF
+                # 1. Handle Reordering (The "3gfast" Fix)
+                # If the packet we just got is OLDER than the highest one we've seen,
+                # it's just out-of-order. Ignore it (don't count as loss).
+                if seq <= user['highest_seq']:
+                    # Handle sequence number wrapping (65535 -> 0)
+                    # If highest is 65000 and we see 10, that's NEW, not old.
+                    wrap_diff = (user['highest_seq'] - seq)
+                    if wrap_diff < 30000:
+                        # It really is an old packet (e.g. we have 100, we got 99)
+                        continue
+
+                # 2. Calculate the gap to the highest seen
+                # (seq - highest) should be 1. If it's more, we skipped packets.
+                diff = (seq - user['highest_seq']) & 0xFFFF 
                 
-                # 3. Detect Loss
-                # If diff is 1, it's the perfect next packet.
-                # If diff > 1, we missed (diff - 1) packets.
                 if diff > 1:
-                    gap = diff - 1
+                    loss_event = diff - 1
                     
-                    # Logic: If gap is massive (> 1000), it's likely a stream reset/new talk burst, not loss.
-                    # If gap is moderate (e.g. 50% loss on LTE), we count it.
-                    if gap < 3000: 
-                        user['loss_count'] += gap
+                    # 3. Handle Large Loss (The "LTE" Fix)
+                    # We increased the threshold from 50 to 3000. 
+                    # This allows detecting massive drops (common in 50% loss scenarios)
+                    # while still ignoring huge jumps caused by stream resets.
+                    if loss_event < 3000:
+                        user['loss_cumulative'] += loss_event
+                        
                         print(json.dumps({
                             "type": "loss", 
                             "ssrc": ssrc, 
-                            "lost": gap,
+                            "lost": loss_event,
                             "seq_now": seq,
                             "seq_prev": user['highest_seq']
                         }))
                         sys.stdout.flush()
                 
+                # Update highest sequence seen
                 user['highest_seq'] = seq
 
-                # Periodic Stats (Every 50 packets received)
-                if user['packets'] % 50 == 0:
+                # --- IMPROVED LOGIC END ---
+
+                # Periodic Heartbeat
+                if user['packets'] % 100 == 0:
                     print(json.dumps({
                         "type": "stats",
                         "ssrc": ssrc,
                         "total_received": user['packets'],
-                        "total_loss": user['loss_count']
+                        "total_loss": user['loss_cumulative']
                     }))
                     sys.stdout.flush()
 

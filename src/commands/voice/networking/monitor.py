@@ -3,14 +3,12 @@ import pyshark
 import json
 
 def start_monitoring(interface, local_port):
-    # Filter for UDP traffic on the specific port
     bpf_filter = f'udp port {local_port}'
     
-    print(f"{{ \"status\": \"started\", \"port\": {local_port}, \"msg\": \"Pyshark monitor running...\" }}")
+    print(json.dumps({ "status": "started", "port": local_port, "msg": "Pyshark monitor running..." }))
     sys.stdout.flush()
 
-    # 1. REMOVED display_filter='rtp' (It was filtering out unrecognized packets)
-    # 2. ADDED decode_as (Forces TShark to interpret this port's UDP as RTP)
+    # Force decode as RTP
     capture = pyshark.LiveCapture(
         interface=interface, 
         bpf_filter=bpf_filter,
@@ -21,59 +19,71 @@ def start_monitoring(interface, local_port):
 
     try:
         for packet in capture.sniff_continuously():
-            # Debug print to confirm raw packets are hitting the script
-            # print(json.dumps({"type": "debug", "msg": f"Packet received! Layers: {packet.layers}"}))
-            # sys.stdout.flush()
-
             try:
-                # If decode_as works, 'packet.rtp' will now exist
                 if not hasattr(packet, 'rtp'):
                     continue
 
                 rtp = packet.rtp
                 ssrc = getattr(rtp, 'ssrc', None)
-                seq_raw = getattr(rtp, 'seq', 0)
-                
-                # Convert to int (TShark sometimes returns strings)
-                seq = int(seq_raw)
+                seq = int(getattr(rtp, 'seq', 0))
                 
                 if not ssrc:
                     continue
 
                 if ssrc not in stats:
-                    stats[ssrc] = {'last_seq': seq, 'packets': 0, 'loss': 0}
-
-                # Simple Loss Logic
-                last_seq = stats[ssrc]['last_seq']
-                diff = (seq - last_seq) & 0xFFFF 
+                    # Initialize user stats
+                    stats[ssrc] = {
+                        'highest_seq': seq, 
+                        'packets': 0, 
+                        'loss_count': 0,
+                        'window': set() # Store recently seen packets to handle out-of-order
+                    }
                 
+                user = stats[ssrc]
+                user['packets'] += 1
+
+                # 1. Handle Duplicate / Old Packets
+                if seq <= user['highest_seq']:
+                    # If packet is very old (sequence wrapped or huge lag), ignore
+                    # If it's just a bit old, it's an out-of-order packet we already counted as "lost"
+                    # We could technically decrement loss count here, but for simple monitoring, we just ignore it.
+                    continue
+
+                # 2. Calculate Gap
+                diff = (seq - user['highest_seq']) & 0xFFFF
+                
+                # 3. Detect Loss
+                # If diff is 1, it's the perfect next packet.
+                # If diff > 1, we missed (diff - 1) packets.
                 if diff > 1:
-                    loss_event = diff - 1
-                    if loss_event < 50:
-                        stats[ssrc]['loss'] += loss_event
+                    gap = diff - 1
+                    
+                    # Logic: If gap is massive (> 1000), it's likely a stream reset/new talk burst, not loss.
+                    # If gap is moderate (e.g. 50% loss on LTE), we count it.
+                    if gap < 3000: 
+                        user['loss_count'] += gap
                         print(json.dumps({
                             "type": "loss", 
                             "ssrc": ssrc, 
-                            "lost": loss_event,
-                            "seq": seq
+                            "lost": gap,
+                            "seq_now": seq,
+                            "seq_prev": user['highest_seq']
                         }))
                         sys.stdout.flush()
+                
+                user['highest_seq'] = seq
 
-                stats[ssrc]['last_seq'] = seq
-                stats[ssrc]['packets'] += 1
-
-                if stats[ssrc]['packets'] % 50 == 0:
+                # Periodic Stats (Every 50 packets received)
+                if user['packets'] % 50 == 0:
                     print(json.dumps({
                         "type": "stats",
                         "ssrc": ssrc,
-                        "total": stats[ssrc]['packets'],
-                        "total_loss": stats[ssrc]['loss']
+                        "total_received": user['packets'],
+                        "total_loss": user['loss_count']
                     }))
                     sys.stdout.flush()
 
-            except Exception as e:
-                # Only print actual errors, ignore expected parsing issues
-                # print(f"Error processing packet: {e}")
+            except Exception:
                 pass
 
     except KeyboardInterrupt:

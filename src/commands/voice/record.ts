@@ -49,25 +49,41 @@ function getSSRCStats(ssrc: number) {
 }
 
 function getLocalUdpPort(connection: VoiceConnection): number | null {
+    // 1. Check if the connection is in the Ready state
     const state = connection.state as any;
-    
-    // The networking property is only available in the 'ready' state
     if (state.status !== VoiceConnectionStatus.Ready) {
         return null;
     }
 
-    // Try multiple paths to find the internal socket
-    // Depending on version/build, these might be private (_prefix)
+    // 2. Access the networking object
     const networking = state.networking || state._networking;
     if (!networking) return null;
 
-    const udp = networking.udp || networking._udp;
-    if (!udp) return null;
+    // 3. 🛠️ DEEP DIVE: Access the private _state inside networking
+    // The logs showed 'networking' has a '_state' property.
+    const internalState = networking.state || networking._state;
+    
+    // Debug log to help if this step fails (you can remove this later)
+    if (internalState) {
+        console.log('Internal State Keys:', Object.keys(internalState));
+    } else {
+        console.warn('Could not find internal networking state');
+    }
 
+    // 4. Try to find the UDP object inside that internal state
+    // It is often usually under 'udp' or inside a 'connection' object depending on the version
+    const udp = networking.udp || networking._udp || internalState?.udp || internalState?._udp;
+
+    if (!udp) {
+        console.warn('UDP object not found in networking or internal state');
+        return null;
+    }
+
+    // 5. Get the socket
     const socket = udp.socket || udp._socket;
     if (!socket) return null;
 
-    // Ensure we can actually get the address
+    // 6. Get the port
     try {
         return socket.address().port;
     } catch (e) {

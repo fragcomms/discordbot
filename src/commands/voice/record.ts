@@ -300,7 +300,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const voiceConnection = getVoiceConnection(interaction.guildId)!;
   const receiver = voiceConnection.receiver;
 
-  const pythonMonitor = await startPyshark(voiceConnection, interaction.guildId!);
+  const pythonMonitor = await startPyshark(voiceConnection, interaction.guildId!, users);
 
   if (pythonMonitor) {
     monitors.set(interaction.guildId!, pythonMonitor);

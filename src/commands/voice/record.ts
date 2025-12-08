@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { SlashCommandBuilder, ChatInputCommandInteraction, User } from 'discord.js';
-import { EndBehaviorType, getVoiceConnection, VoiceReceiver } from '@discordjs/voice'
+import { EndBehaviorType, getVoiceConnection, VoiceReceiver, VoiceConnectionStatus } from '@discordjs/voice'
 import { recordings, Recording, logRecordings } from '../utility/recordings.js';
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -35,8 +35,10 @@ const data = new SlashCommandBuilder()
     .setName('user6')
     .setDescription('User to be recorded'))
 
-// Track last sequence number per user (SSRC) to detect packet loss
+// Track last sequence number per user to detect packet loss
 const lastSeqPerUser = new Map<string, number>();
+// Track UDP stats per user
+const udpStatsPerUser = new Map<string, { totalPackets: number; lostPackets: number }>();
 
 // Function to inspect raw UDP packet for sequence numbers
 function inspectPacket(buffer: Buffer, userId: string): { seq: number; timestamp: number; loss: number } {
@@ -50,6 +52,14 @@ function inspectPacket(buffer: Buffer, userId: string): { seq: number; timestamp
   let loss = 0;
   const prev = lastSeqPerUser.get(userId);
 
+  // Initialize stats if needed
+  if (!udpStatsPerUser.has(userId)) {
+    udpStatsPerUser.set(userId, { totalPackets: 0, lostPackets: 0 });
+  }
+
+  const stats = udpStatsPerUser.get(userId)!;
+  stats.totalPackets++;
+
   // Check for packet loss by comparing sequence numbers
   if (prev !== undefined) {
     // Expected sequence is previous + 1, wrapping at 65535
@@ -60,9 +70,9 @@ function inspectPacket(buffer: Buffer, userId: string): { seq: number; timestamp
       loss = (seq - expected) & 0xFFFF;
       
       if (loss > 0 && loss < 100) {
-        // Only report if reasonable loss amount (filters out huge gaps from silence)
+        stats.lostPackets += loss;
         console.warn(
-          `[${userId}] ⚠️  Packet loss! Expected seq: ${expected}, Got: ${seq}, Lost: ${loss}`
+          `[${userId}] ⚠️  UDP Packet loss detected! Expected seq: ${expected}, Got: ${seq}, Lost: ${loss}`
         );
       }
     }
@@ -95,30 +105,25 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   const filePath = path.join(dataDir, `${datenow}.pcm`);
   const outputStream = fs.createWriteStream(filePath);
 
-  // Initialize packet tracking variables
-  let totalPackets = 0;
-  let totalLoss = 0;
-  let lastPacketTime = 0;
+  // Initialize packet tracking variables for audio frames
+  let totalFrames = 0;
+  let lastFrameTime = 0;
   let totalGapMs = 0;
   
-  console.log(`[${user.username}] 🎙️  Started monitoring UDP packets...`);
+  console.log(`[${user.username}] 🎙️  Started monitoring voice stream...`);
+  console.log(`[${user.username}] 📡 Monitoring UDP packet reception...`);
   
   // Handle each incoming packet
   opusStream.on('data', (chunk: Buffer) => {
     const now = Date.now();
-    totalPackets++;
+    totalFrames++;
 
-    // Inspect the raw UDP packet for RTP sequence number and detect loss
+    // Inspect the raw UDP packet for RTP sequence number and detect loss AT THE UDP LEVEL
     const { seq, timestamp, loss } = inspectPacket(chunk, user.id);
-    
-    // Accumulate total packet loss
-    if (loss > 0 && loss < 100) {
-      totalLoss += loss;
-    }
 
     // Handle silence gaps (when user stops speaking and resumes)
-    if (lastPacketTime > 0) {
-      const delta = now - lastPacketTime;
+    if (lastFrameTime > 0) {
+      const delta = now - lastFrameTime;
       // If more than 40ms gap, insert silence frames
       const missingFrames = Math.floor(delta / 20) - 1;
       if (missingFrames > 0) {
@@ -129,20 +134,22 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
       }
     }
 
-    // Log statistics every 500 packets (~10 seconds of speech)
-    if (totalPackets % 500 === 0) {
-      // Calculate success rate: (received packets - lost packets) / received packets * 100
-      const successRate = totalPackets > 0 
-        ? ((totalPackets - totalLoss) / totalPackets) * 100 
-        : 100;
-      
-      console.log(
-        `[${user.username}] 📊 Stats - Received: ${totalPackets} | Lost: ${totalLoss} | ` +
-        `Success: ${successRate.toFixed(2)}% | Silence gaps: ${totalGapMs}ms`
-      );
+    // Log statistics every 500 frames (~10 seconds of speech)
+    if (totalFrames % 500 === 0) {
+      const stats = udpStatsPerUser.get(user.id);
+      if (stats) {
+        const successRate = stats.totalPackets > 0 
+          ? ((stats.totalPackets - stats.lostPackets) / stats.totalPackets) * 100 
+          : 100;
+        
+        console.log(
+          `[${user.username}] 📊 UDP Reception Stats - Total packets: ${stats.totalPackets} | ` +
+          `Lost: ${stats.lostPackets} | Success: ${successRate.toFixed(2)}% | Audio gaps: ${totalGapMs}ms`
+        );
+      }
     }
     
-    lastPacketTime = now;
+    lastFrameTime = now;
   });
 
   // Pipe opus stream through decoder to output file

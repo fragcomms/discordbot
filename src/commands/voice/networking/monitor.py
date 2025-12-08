@@ -33,9 +33,6 @@ def start_monitoring(interface, local_port):
                 
                 if not ssrc:
                     continue
-                    
-                if len(TARGET_SSRCS) > 0 and ssrc not in TARGET_SSRCS:
-                    continue
 
                 if ssrc not in stats:
                     stats[ssrc] = {
@@ -55,10 +52,10 @@ def start_monitoring(interface, local_port):
                 audio_diff_ms = (rtp_diff / 48000) * 1000
 
                 # --- SILENCE DETECTION ---
-                # If audio skips forward > 80ms, user stopped talking. Reset.
                 if audio_diff_ms > 80:
                     print(json.dumps({
                         "type": "debug", 
+                        "ssrc": ssrc,   # 👈 ADDED SSRC HERE
                         "msg": "Silence gap detected (Resetting Jitter)",
                         "gap_ms": int(audio_diff_ms)
                     }))
@@ -72,9 +69,9 @@ def start_monitoring(interface, local_port):
                 jitter = wall_diff - audio_diff_ms
 
                 # 👇 VERBOSE LOGGING: Print EVERY packet's stats
-                # This confirms the script is running.
                 print(json.dumps({
                     "type": "jitter_debug", 
+                    "ssrc": ssrc,       # 👈 ADDED SSRC HERE
                     "seq": seq,
                     "wall_diff": round(wall_diff, 2),
                     "audio_diff": round(audio_diff_ms, 2),

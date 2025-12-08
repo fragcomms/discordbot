@@ -6,7 +6,7 @@ import time
 def start_monitoring(interface, local_port):
     bpf_filter = f'udp port {local_port}'
     
-    print(json.dumps({ "status": "started", "port": local_port, "msg": "Pyshark monitor running (Time & Seq Tracking)..." }))
+    print(json.dumps({ "status": "started", "port": local_port, "msg": "Pyshark monitor running (VERBOSE MODE)..." }))
     sys.stdout.flush()
 
     capture = pyshark.LiveCapture(
@@ -26,45 +26,68 @@ def start_monitoring(interface, local_port):
                 rtp = packet.rtp
                 ssrc = getattr(rtp, 'ssrc', None)
                 seq = int(getattr(rtp, 'seq', 0))
+                rtp_time = int(getattr(rtp, 'timestamp', 0)) 
                 
-                # Get current time in milliseconds
-                current_time_ms = time.time() * 1000 
+                # Use Kernel Timestamp
+                arrival_time_ms = float(packet.sniff_timestamp) * 1000 
                 
                 if not ssrc:
+                    continue
+                    
+                if len(TARGET_SSRCS) > 0 and ssrc not in TARGET_SSRCS:
                     continue
 
                 if ssrc not in stats:
                     stats[ssrc] = {
                         'highest_seq': seq, 
-                        'last_arrival_time': current_time_ms,
-                        'packets': 0
+                        'last_arrival_time': arrival_time_ms,
+                        'last_rtp_time': rtp_time,
                     }
                 
                 user = stats[ssrc]
                 
-                # --- TIME GAP DETECTION (NEW) ---
-                time_diff = current_time_ms - user['last_arrival_time']
+                # --- CALCULATIONS ---
+                wall_diff = arrival_time_ms - user['last_arrival_time']
                 
-                # If packet arrived more than 200ms after the previous one
-                # (Standard RTP packets come every 20ms)
-                if time_diff > 200:
+                rtp_diff = (rtp_time - user['last_rtp_time'])
+                if rtp_diff < -2147483648: rtp_diff += 4294967296 
+                
+                audio_diff_ms = (rtp_diff / 48000) * 1000
+
+                # --- SILENCE DETECTION ---
+                # If audio skips forward > 80ms, user stopped talking. Reset.
+                if audio_diff_ms > 80:
                     print(json.dumps({
-                        "type": "latency_spike", 
-                        "ssrc": ssrc, 
-                        "gap_ms": int(time_diff),
-                        "seq_now": seq,
-                        "seq_prev": user['highest_seq']
+                        "type": "debug", 
+                        "msg": "Silence gap detected (Resetting Jitter)",
+                        "gap_ms": int(audio_diff_ms)
                     }))
                     sys.stdout.flush()
+                    user['last_arrival_time'] = arrival_time_ms
+                    user['last_rtp_time'] = rtp_time
+                    user['highest_seq'] = seq
+                    continue
 
-                user['last_arrival_time'] = current_time_ms
-                user['packets'] += 1
+                # --- JITTER CALCULATION ---
+                jitter = wall_diff - audio_diff_ms
 
-                # --- SEQUENCE LOSS DETECTION ---
-                if seq <= user['highest_seq']:
-                     # Handle duplicates/reordering silently
-                    pass
-                else:
+                # 👇 VERBOSE LOGGING: Print EVERY packet's stats
+                # This confirms the script is running.
+                print(json.dumps({
+                    "type": "jitter_debug", 
+                    "seq": seq,
+                    "wall_diff": round(wall_diff, 2),
+                    "audio_diff": round(audio_diff_ms, 2),
+                    "jitter": round(jitter, 2)
+                }))
+                sys.stdout.flush()
+
+                # Update trackers
+                user['last_arrival_time'] = arrival_time_ms
+                user['last_rtp_time'] = rtp_time
+
+                # --- PACKET LOSS ---
+                if seq > user['highest_seq']:
                     diff = (seq - user['highest_seq']) & 0xFFFF 
                     if diff > 1:
                         loss_event = diff - 1
@@ -72,13 +95,11 @@ def start_monitoring(interface, local_port):
                             print(json.dumps({
                                 "type": "loss", 
                                 "ssrc": ssrc, 
-                                "lost": loss_event,
-                                "seq_now": seq,
-                                "seq_prev": user['highest_seq']
+                                "lost": loss_event
                             }))
                             sys.stdout.flush()
-                
-                user['highest_seq'] = seq
+                    
+                    user['highest_seq'] = seq
 
             except Exception:
                 pass

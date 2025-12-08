@@ -91,13 +91,13 @@ function getLocalUdpPort(connection: VoiceConnection): number | null {
   }
 }
 
-async function startPyshark(connection: VoiceConnection, guildId: string): Promise<ChildProcess | null> {
+// 👇 Updated Signature: Now accepts 'users' array
+async function startPyshark(connection: VoiceConnection, guildId: string, users: User[]): Promise<ChildProcess | null> {
   try {
-    // 1. Ensure connection is Ready before grabbing port
+    // 1. Ensure connection is Ready
     if (connection.state.status !== VoiceConnectionStatus.Ready) {
       console.log('Connection not ready yet, waiting for Ready state...');
       try {
-        // Wait up to 5 seconds for the connection to be ready
         await entersState(connection, VoiceConnectionStatus.Ready, 5000);
       } catch (error) {
         console.error('Connection failed to become Ready within 5s');
@@ -107,41 +107,64 @@ async function startPyshark(connection: VoiceConnection, guildId: string): Promi
 
     // 2. Get the port
     const localPort = getLocalUdpPort(connection);
-
     if (!localPort) {
-      console.warn('Could not find UDP socket information even after Ready state. Internals might have changed.');
-      // Debug: Log keys to help identify structure if it fails
-      const state = connection.state as any;
-      console.log('Debug State Keys:', Object.keys(state));
-      if (state.networking) console.log('Debug Networking Keys:', Object.keys(state.networking));
+      console.warn('Could not find UDP socket information.');
       return null;
     }
 
     console.log(`UDP Socket found! Spawning Pyshark monitor on port: ${localPort}`);
 
+    // Verify paths (Adjust if needed)
     const pythonPath = path.resolve(process.cwd(), 'src', 'commands', 'voice', 'networking', '.venv', 'bin', 'python');
     const scriptPath = path.resolve(process.cwd(), 'src', 'commands', 'voice', 'networking', 'monitor.py');
-    // Spawn Python process
+    
     const pysharkProcess = spawn(pythonPath, [scriptPath, localPort.toString()], {
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'] 
     });
+
+    // 3. Get Receiver to look up SSRCs
+    const receiver = connection.receiver;
 
     pysharkProcess.stdout.on('data', (data) => {
       const lines = data.toString().split('\n');
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
-          const json = JSON.parse(line);
-          if (json.type === 'loss') {
-            console.warn(`[Pyshark] Packet Loss Detected (SSRC: ${json.ssrc}): ${json.lost} packets`);
-          } else if (json.type === 'stats') {
-            // Optional heartbeat logging
-            // console.log(`📊 [Pyshark Status] Total: ${json.total} | Loss: ${json.total_loss}`);
-          } else {
-            console.log(`[Pyshark] ${JSON.stringify(json)}`);
-          }
-        } catch (e) {
-          console.log(`[Pyshark] ${line}`);
+            const json = JSON.parse(line);
+            
+            // Only logs, ignores heartbeat stats/startup messages unless you want them
+            if (!json.ssrc) {
+                 // console.log(`[Pyshark System] ${line}`);
+                 continue;
+            }
+
+            // 🔍 FILTER LOGIC: Check if this packet belongs to any of our users
+            let foundMatch = false;
+
+            for (const user of users) {
+                // Get the SSRC for this specific user
+                const ssrcInfo = (receiver as any).ssrcMap?.get(user.id);
+                
+                if (ssrcInfo) {
+                    // Convert Discord SSRC (Decimal) to Pyshark SSRC (Hex String)
+                    // Discord: 12345 -> Pyshark: "0x3039"
+                    // We compare them as numbers to be safe
+                    const pysharkSSRC = parseInt(json.ssrc, 16);
+                    
+                    if (pysharkSSRC === ssrcInfo.ssrc) {
+                        // IT'S A MATCH! Print with Username
+                        console.log(`[Packet Loss Log] User: ${user.username} | Lost: ${json.lost}`);
+                        foundMatch = true;
+                        break; 
+                    }
+                }
+            }
+
+            // Optional: If you want to see packets from unknown users too
+            // if (!foundMatch) console.log(`[Unknown SSRC] ${line}`);
+
+        } catch (e) { 
+            // console.log(`[Pyshark Raw] ${line}`);
         }
       }
     });

@@ -22,6 +22,8 @@ def start_monitoring(interface, local_port):
 
     try:
         for packet in capture.sniff_continuously():
+            print(json.dumps({"type": "debug", "msg": "Packet received!"}))
+            sys.stdout.flush()
             try:
                 # Pyshark parses the RTP layer automatically
                 rtp = packet.rtp

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { SlashCommandBuilder, ChatInputCommandInteraction, User } from 'discord.js';
-import { EndBehaviorType, getVoiceConnection, VoiceReceiver, VoiceConnectionStatus } from '@discordjs/voice'
+import { EndBehaviorType, getVoiceConnection, VoiceReceiver } from '@discordjs/voice'
 import { recordings, Recording, logRecordings } from '../utility/recordings.js';
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -35,58 +35,70 @@ const data = new SlashCommandBuilder()
     .setName('user6')
     .setDescription('User to be recorded'))
 
-// Track last sequence number per user to detect packet loss
-const lastSeqPerUser = new Map<string, number>();
-// Track UDP stats per user
-const udpStatsPerUser = new Map<string, { totalPackets: number; lostPackets: number }>();
+// Track last RTP sequence number per user to detect incoming packet loss
+const lastRtpSeqPerUser = new Map<string, number>();
+// Track statistics per user
+const statsPerUser = new Map<string, { totalPackets: number; lostPackets: number }>();
 
-// Function to inspect raw UDP packet for sequence numbers
-function inspectPacket(buffer: Buffer, userId: string): { seq: number; timestamp: number; loss: number } {
-  // RTP header format:
+// Inspect incoming RTP packet from Discord for sequence number
+function inspectIncomingPacket(buffer: Buffer, userId: string): { seq: number; loss: number } {
+  // RTP header in Discord voice packets:
   // byte 2-3 = sequence number (16-bit big-endian)
-  // byte 4-7 = timestamp (32-bit big-endian)
-  
   const seq = buffer.readUInt16BE(2);
-  const timestamp = buffer.readUInt32BE(4);
 
-  let loss = 0;
-  const prev = lastSeqPerUser.get(userId);
-
-  // Initialize stats if needed
-  if (!udpStatsPerUser.has(userId)) {
-    udpStatsPerUser.set(userId, { totalPackets: 0, lostPackets: 0 });
+  // Initialize stats if first packet from this user
+  if (!statsPerUser.has(userId)) {
+    statsPerUser.set(userId, { totalPackets: 0, lostPackets: 0 });
   }
 
-  const stats = udpStatsPerUser.get(userId)!;
+  const stats = statsPerUser.get(userId)!;
   stats.totalPackets++;
 
+  let loss = 0;
+  const prevSeq = lastRtpSeqPerUser.get(userId);
+
   // Check for packet loss by comparing sequence numbers
-  if (prev !== undefined) {
+  if (prevSeq !== undefined) {
     // Expected sequence is previous + 1, wrapping at 65535
-    const expected = (prev + 1) & 0xFFFF;
+    const expected = (prevSeq + 1) & 0xFFFF;
     
     if (seq !== expected) {
       // Calculate packets lost (accounting for wraparound)
       loss = (seq - expected) & 0xFFFF;
       
+      // Only count reasonable loss (filters out huge gaps from long silence)
       if (loss > 0 && loss < 100) {
         stats.lostPackets += loss;
         console.warn(
-          `[${userId}] ⚠️  UDP Packet loss detected! Expected seq: ${expected}, Got: ${seq}, Lost: ${loss}`
+          `⚠️  [${userId}] Incoming packet loss from Discord! Expected seq: ${expected}, Got: ${seq}, Lost: ${loss}`
         );
+      } else {
+        // Reset if gap is too large (probably silence/reconnection)
+        loss = 0;
       }
     }
   }
 
   // Store this sequence number for next comparison
-  lastSeqPerUser.set(userId, seq);
+  lastRtpSeqPerUser.set(userId, seq);
 
-  return { seq, timestamp, loss };
+  return { seq, loss };
+}
+
+// Get statistics for a user
+function getUserStats(userId: string) {
+  return statsPerUser.get(userId);
 }
 
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
-async function createListeningStream(receiver: VoiceReceiver, user: User, guildId: string, channelId: string, datenow: string) {
-  // Subscribe to the user's audio stream with raw UDP packets
+async function createListeningStream(
+  receiver: VoiceReceiver,
+  user: User,
+  guildId: string,
+  channelId: string,
+  datenow: string
+) {
+  // Subscribe to the user's audio stream
   const opusStream = receiver.subscribe(user.id, {
     end: { behavior: EndBehaviorType.Manual },
   });
@@ -105,21 +117,21 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   const filePath = path.join(dataDir, `${datenow}.pcm`);
   const outputStream = fs.createWriteStream(filePath);
 
-  // Initialize packet tracking variables for audio frames
+  // Initialize tracking variables
   let totalFrames = 0;
   let lastFrameTime = 0;
   let totalGapMs = 0;
   
-  console.log(`[${user.username}] 🎙️  Started monitoring voice stream...`);
-  console.log(`[${user.username}] 📡 Monitoring UDP packet reception...`);
+  console.log(`[${user.username}] 🎙️  Started monitoring incoming packets from Discord`);
+  console.log(`[${user.username}] 💾 Saving to: ${filePath}`);
   
-  // Handle each incoming packet
+  // Handle each incoming packet from Discord
   opusStream.on('data', (chunk: Buffer) => {
     const now = Date.now();
     totalFrames++;
 
-    // Inspect the raw UDP packet for RTP sequence number and detect loss AT THE UDP LEVEL
-    const { seq, timestamp, loss } = inspectPacket(chunk, user.id);
+    // Inspect the incoming RTP packet from Discord for sequence number
+    const { seq, loss } = inspectIncomingPacket(chunk, user.id);
 
     // Handle silence gaps (when user stops speaking and resumes)
     if (lastFrameTime > 0) {
@@ -136,15 +148,16 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
 
     // Log statistics every 500 frames (~10 seconds of speech)
     if (totalFrames % 500 === 0) {
-      const stats = udpStatsPerUser.get(user.id);
+      const stats = getUserStats(user.id);
       if (stats) {
-        const successRate = stats.totalPackets > 0 
-          ? ((stats.totalPackets - stats.lostPackets) / stats.totalPackets) * 100 
+        const successRate = stats.totalPackets > 0
+          ? ((stats.totalPackets - stats.lostPackets) / stats.totalPackets) * 100
           : 100;
         
         console.log(
-          `[${user.username}] 📊 UDP Reception Stats - Total packets: ${stats.totalPackets} | ` +
-          `Lost: ${stats.lostPackets} | Success: ${successRate.toFixed(2)}% | Audio gaps: ${totalGapMs}ms`
+          `[${user.username}] 📊 Incoming Stats - Received: ${stats.totalPackets} | ` +
+          `Lost: ${stats.lostPackets} | Success: ${successRate.toFixed(2)}% | ` +
+          `Silence gaps: ${totalGapMs}ms`
         );
       }
     }
@@ -212,7 +225,13 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const datenow = Date.now()// required to make all recordings have same UNIX time
   for (const user of users) {
     console.log(`Listening to ${user.username}`)
-    createListeningStream(receiver, user, interaction.guildId, interaction.guild.members.me.voice.channel.id, datenow.toString());
+    createListeningStream(
+      receiver,
+      user,
+      interaction.guildId,
+      interaction.guild.members.me.voice.channel.id,
+      datenow.toString()
+    );
   }
 }
 

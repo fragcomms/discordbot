@@ -210,6 +210,9 @@ async function createListeningStream(
           outputStream.write(silence);
         }
       }
+      if (delta > 100) {
+        console.warn(`[${user.username}] NETWORK DROP: Audio Gap of ${delta}ms detected!`);
+      }
     }
 
     lastFrameTime = now;

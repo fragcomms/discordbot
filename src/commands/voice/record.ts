@@ -92,51 +92,83 @@ function inspectRTPPacket(buffer: Buffer, ssrc: number, username: string): { seq
   return { seq, loss };
 }
 
-// Hook into raw UDP packets before Discord.js processes them
-function setupRawPacketMonitoring(voiceConnection: VoiceConnection, guildId: string) {
+// Hook into receiver's packet handler
+function setupRawPacketMonitoring(receiver: VoiceReceiver, voiceConnection: VoiceConnection, guildId: string) {
   try {
-    // Access the internal UDP socket from the voice connection
-    // This is undocumented but works with @discordjs/voice
-    const internalConnection = (voiceConnection as any);
-    const udpSocket = internalConnection.udp?.socket;
-
-    if (!udpSocket) {
-      console.warn('⚠️  Could not access raw UDP socket for packet monitoring');
+    // Access the internal receiver to hook into packet processing
+    const internalReceiver = (receiver as any);
+    
+    // The receiver has a packets map or onMessage handler
+    // Try to hook into the voice receiver's internal message handler
+    if (internalReceiver._onMessage) {
+      const originalOnMessage = internalReceiver._onMessage;
+      
+      internalReceiver._onMessage = function(buffer: Buffer, rinfo: any) {
+        // Call original handler first
+        originalOnMessage.call(this, buffer, rinfo);
+        
+        // Then process for packet loss detection
+        if (buffer.length >= 12) {
+          const ssrc = buffer.readUInt32BE(8);
+          const voiceConn = (voiceConnection as any);
+          let username = `User(${ssrc})`;
+          
+          if (internalReceiver.ssrcMap) {
+            for (const [userId, info] of internalReceiver.ssrcMap) {
+              if (info.ssrc === ssrc) {
+                username = info.userId || userId;
+                break;
+              }
+            }
+          }
+          
+          inspectRTPPacket(buffer, ssrc, username);
+        }
+      };
+      
+      console.log(`✅ Raw packet monitoring enabled (via receiver hook) for guild ${guildId}`);
       return;
     }
 
-    // Listen to raw UDP messages before Discord.js processes them
-    const originalOnMessage = udpSocket.onMessage || udpSocket.on.bind(udpSocket, 'message');
-    
-    if (udpSocket.on) {
-      udpSocket.on('message', (buffer: Buffer, rinfo: any) => {
-        // Skip if buffer too small for RTP header
-        if (buffer.length < 12) return;
-
-        // Extract SSRC from bytes 8-11 of RTP header
-        const ssrc = buffer.readUInt32BE(8);
-
-        // Get username from SSRC (from receiver's ssrcMap)
-        const receiver = voiceConnection.receiver;
-        let username = `User(${ssrc})`;
+    // Alternative: Hook into the voice receiver's subscriptions
+    if (internalReceiver.voiceConnection) {
+      const voiceConn = internalReceiver.voiceConnection;
+      const internalVoiceConn = (voiceConn as any);
+      
+      // Try to hook into the receiver's internal packet handler
+      if (internalVoiceConn.receiver && (internalVoiceConn.receiver as any)._onMessage) {
+        const originalHandler = (internalVoiceConn.receiver as any)._onMessage;
         
-        if (receiver && (receiver as any).ssrcMap) {
-          for (const [userId, info] of (receiver as any).ssrcMap) {
-            if (info.ssrc === ssrc) {
-              username = info.userId || userId;
-              break;
+        (internalVoiceConn.receiver as any)._onMessage = function(buffer: Buffer, rinfo: any) {
+          originalHandler.call(this, buffer, rinfo);
+          
+          if (buffer.length >= 12) {
+            const ssrc = buffer.readUInt32BE(8);
+            let username = `User(${ssrc})`;
+            
+            if ((internalReceiver as any).ssrcMap) {
+              for (const [userId, info] of (internalReceiver as any).ssrcMap) {
+                if (info.ssrc === ssrc) {
+                  username = info.userId || userId;
+                  break;
+                }
+              }
             }
+            
+            inspectRTPPacket(buffer, ssrc, username);
           }
-        }
-
-        // Inspect the RTP packet
-        inspectRTPPacket(buffer, ssrc, username);
-      });
+        };
+        
+        console.log(`✅ Raw packet monitoring enabled (via voice connection) for guild ${guildId}`);
+        return;
+      }
     }
 
-    console.log(`✅ Raw UDP packet monitoring enabled for guild ${guildId}`);
+    console.warn('⚠️  Could not hook into voice receiver for packet monitoring');
+    console.log('📋 Falling back to timing-based loss detection');
   } catch (error) {
     console.warn(`⚠️  Could not setup raw packet monitoring: ${error}`);
+    console.log('📋 Falling back to timing-based loss detection');
   }
 }
 
@@ -290,7 +322,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const receiver = voiceConnection.receiver;
 
   // Setup raw UDP packet monitoring
-  setupRawPacketMonitoring(voiceConnection, interaction.guildId);
+  setupRawPacketMonitoring(receiver, voiceConnection, interaction.guildId);
 
   // For each user, create a listening stream
   const datenow = Date.now()

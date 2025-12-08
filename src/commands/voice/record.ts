@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { SlashCommandBuilder, ChatInputCommandInteraction, User } from 'discord.js';
-import { EndBehaviorType, getVoiceConnection, VoiceReceiver, VoiceConnection } from '@discordjs/voice'
+import { EndBehaviorType, getVoiceConnection, VoiceReceiver, VoiceConnection, VoiceConnectionStatus, entersState } from '@discordjs/voice'
 import { recordings, Recording, logRecordings } from '../utility/recordings.js';
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -48,24 +48,62 @@ function getSSRCStats(ssrc: number) {
   return statsPerSSRC.get(ssrc);
 }
 
-function startPyshark(connection: VoiceConnection, guildId: string): ChildProcess | null {
-  try {
-    // ⚠️ ACCESSING INTERNAL: discord.js doesn't publicly expose the UDP socket
-    // We need the local port so Pyshark knows which traffic is ours.
-    const networkState = (connection.state as any).networking;
-    const udpSocket = networkState?.udp?.socket;
+function getLocalUdpPort(connection: VoiceConnection): number | null {
+    const state = connection.state as any;
     
-    if (!udpSocket) {
-      console.warn('❌ Could not find UDP socket information. Pyshark will not start.');
+    // The networking property is only available in the 'ready' state
+    if (state.status !== VoiceConnectionStatus.Ready) {
+        return null;
+    }
+
+    // Try multiple paths to find the internal socket
+    // Depending on version/build, these might be private (_prefix)
+    const networking = state.networking || state._networking;
+    if (!networking) return null;
+
+    const udp = networking.udp || networking._udp;
+    if (!udp) return null;
+
+    const socket = udp.socket || udp._socket;
+    if (!socket) return null;
+
+    // Ensure we can actually get the address
+    try {
+        return socket.address().port;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function startPyshark(connection: VoiceConnection, guildId: string): Promise<ChildProcess | null> {
+  try {
+    // 1. Ensure connection is Ready before grabbing port
+    if (connection.state.status !== VoiceConnectionStatus.Ready) {
+        console.log('Connection not ready yet, waiting for Ready state...');
+        try {
+            // Wait up to 5 seconds for the connection to be ready
+            await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+        } catch (error) {
+            console.error('Connection failed to become Ready within 5s');
+            return null;
+        }
+    }
+
+    // 2. Get the port
+    const localPort = getLocalUdpPort(connection);
+    
+    if (!localPort) {
+      console.warn('Could not find UDP socket information even after Ready state. Internals might have changed.');
+      // Debug: Log keys to help identify structure if it fails
+      const state = connection.state as any;
+      console.log('Debug State Keys:', Object.keys(state));
+      if (state.networking) console.log('Debug Networking Keys:', Object.keys(state.networking));
       return null;
     }
 
-    // Get the port the bot is listening on locally
-    const localPort = udpSocket.address().port;
-    console.log(`🔎 Spawning Pyshark monitor for UDP Port: ${localPort}`);
+    console.log(`UDP Socket found! Spawning Pyshark monitor on port: ${localPort}`);
 
     // Spawn Python process
-    // Ensure 'monitor.py' is in the correct directory relative to where you run the bot
     const pysharkProcess = spawn('./networking/.venv/bin/python', ['monitor.py', localPort.toString()], {
       stdio: ['ignore', 'pipe', 'pipe'] 
     });
@@ -77,16 +115,15 @@ function startPyshark(connection: VoiceConnection, guildId: string): ChildProces
         try {
             const json = JSON.parse(line);
             if (json.type === 'loss') {
-                console.warn(`⚠️ [Pyshark] Packet Loss Detected (SSRC: ${json.ssrc}): ${json.lost} packets`);
+                console.warn(`[Pyshark] Packet Loss Detected (SSRC: ${json.ssrc}): ${json.lost} packets`);
             } else if (json.type === 'stats') {
-               // Optional: excessively verbose
-               // console.log(`📊 [Pyshark] Stats (SSRC: ${json.ssrc}): Total ${json.total} | Loss ${json.total_loss}`);
+                // Optional heartbeat logging
+                // console.log(`📊 [Pyshark Status] Total: ${json.total} | Loss: ${json.total_loss}`);
             } else {
-                console.log(`🐍 [Pyshark] ${JSON.stringify(json)}`);
+                console.log(`[Pyshark] ${JSON.stringify(json)}`);
             }
         } catch (e) { 
-            // Plain text output
-            console.log(`🐍 [Pyshark] ${line}`);
+            console.log(`[Pyshark] ${line}`);
         }
       }
     });
@@ -135,8 +172,8 @@ async function createListeningStream(
   let lastFrameTime = 0;
   let totalGapMs = 0;
   
-  console.log(`[${user.username}] 🎙️  Started recording`);
-  console.log(`[${user.username}] 💾 Saving to: ${filePath}`);
+  console.log(`[${user.username}] Started recording`);
+  console.log(`[${user.username}] Saving to: ${filePath}`);
   
   // Handle each incoming packet from Discord
   opusStream.on('data', (chunk: Buffer) => {
@@ -153,27 +190,6 @@ async function createListeningStream(
           totalGapMs += delta - 20;
           const silence = Buffer.alloc(estimatedMissing * 960 * 2 * 2, 0);
           outputStream.write(silence);
-        }
-      }
-    }
-
-    // Log statistics every 500 frames (~10 seconds of speech)
-    if (totalFrames % 500 === 0) {
-      console.log(
-        `[${user.username}] Audio frames received: ${totalFrames} | ` +
-        `Silence gaps: ${totalGapMs}ms`
-      );
-      
-      // Also print RTP-level stats if available
-      const ssrcInfo = (receiver as any).ssrcMap?.get(user.id);
-      if (ssrcInfo) {
-        const rtpStats = getSSRCStats(ssrcInfo.ssrc);
-        if (rtpStats && rtpStats.totalPackets > 0) {
-          const rtpSuccessRate = ((rtpStats.totalPackets - rtpStats.lostPackets) / rtpStats.totalPackets * 100).toFixed(2);
-          console.log(
-            `[${user.username}] 📡 RTP-level: Received ${rtpStats.totalPackets} | ` +
-            `Lost: ${rtpStats.lostPackets} | Success: ${rtpSuccessRate}%`
-          );
         }
       }
     }
@@ -243,7 +259,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const voiceConnection = getVoiceConnection(interaction.guildId)!;
   const receiver = voiceConnection.receiver;
 
-  const pythonMonitor = startPyshark(voiceConnection, interaction.guildId!);
+  const pythonMonitor = await startPyshark(voiceConnection, interaction.guildId!);
 
   voiceConnection.on('stateChange', (oldState, newState) => {
       if (newState.status === 'destroyed' || newState.status === 'disconnected') {

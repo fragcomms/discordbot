@@ -120,7 +120,7 @@ async function startPyshark(connection: VoiceConnection, guildId: string): Promi
     console.log(`UDP Socket found! Spawning Pyshark monitor on port: ${localPort}`);
 
     // Spawn Python process
-    const pysharkProcess = spawn('./networking/.venv/bin/python', ['monitor.py', localPort.toString()], {
+    const pysharkProcess = spawn('src/commands/voice/networking/.venv/bin/python', ['monitor.py', localPort.toString()], {
       stdio: ['ignore', 'pipe', 'pipe'] 
     });
 

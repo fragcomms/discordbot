@@ -82,7 +82,7 @@ def start_monitoring(interface, local_port):
                 user['last_arrival_time'] = arrival_time_ms
                 user['last_rtp_time'] = rtp_time
 
-                # --- PACKET LOSS ---
+                # --- PACKET LOSS --- doesnt work
                 if seq > user['highest_seq']:
                     diff = (seq - user['highest_seq']) & 0xFFFF 
                     if diff > 1:

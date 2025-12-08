@@ -49,29 +49,27 @@ function getSSRCStats(ssrc: number) {
 }
 
 function getLocalUdpPort(connection: VoiceConnection): number | null {
-  // 1. Check if the connection is in the Ready state
+  // Check if the connection is Ready 
   const state = connection.state as any;
   if (state.status !== VoiceConnectionStatus.Ready) {
     return null;
   }
 
-  // 2. Access the networking object
+  // Access the networking object
   const networking = state.networking || state._networking;
   if (!networking) return null;
 
-  // 3. ðŸ› ï¸ DEEP DIVE: Access the private _state inside networking
-  // The logs showed 'networking' has a '_state' property.
+  // Access the private _state inside networking
   const internalState = networking.state || networking._state;
 
-  // Debug log to help if this step fails (you can remove this later)
+  // Debug log
   if (internalState) {
     console.log('Internal State Keys:', Object.keys(internalState));
   } else {
     console.warn('Could not find internal networking state');
   }
 
-  // 4. Try to find the UDP object inside that internal state
-  // It is often usually under 'udp' or inside a 'connection' object depending on the version
+  // find UDP object inside internal state
   const udp = networking.udp || networking._udp || internalState?.udp || internalState?._udp;
 
   if (!udp) {
@@ -79,11 +77,9 @@ function getLocalUdpPort(connection: VoiceConnection): number | null {
     return null;
   }
 
-  // 5. Get the socket
   const socket = udp.socket || udp._socket;
   if (!socket) return null;
 
-  // 6. Get the port
   try {
     return socket.address().port;
   } catch (e) {
@@ -91,7 +87,6 @@ function getLocalUdpPort(connection: VoiceConnection): number | null {
   }
 }
 
-// ðŸ‘‡ Updated Signature: Now accepts 'users' array
 async function startPyshark(connection: VoiceConnection, guildId: string, users: User[]): Promise<ChildProcess | null> {
   try {
     if (connection.state.status !== VoiceConnectionStatus.Ready) {
@@ -130,22 +125,15 @@ async function startPyshark(connection: VoiceConnection, guildId: string, users:
       for (const line of lines) {
         if (!line.trim()) continue;
 
-        // 1️⃣ RAW DEBUG: Print EVERYTHING from Python to confirm it's working
-        // Once we see this working, we can comment it out.
-        // console.log(`[RAW PYTHON]: ${line}`); 
-
         try {
           const json = JSON.parse(line);
 
-          // 2️⃣ CHECK SSRC MAPPING
-          // If the log has an SSRC, let's see if our Receiver knows about it.
           if (json.ssrc) {
             const pysharkSSRC = parseInt(json.ssrc, 16); // Convert Hex to Int
 
             // print it generically so we know data is flowing
             console.log(`[SSRC: ${json.ssrc}] Jitter: ${json.jitter} Sequence: ${json.seq}`);
           } else {
-            // System message (Started, etc)
             console.log(`[System] ${JSON.stringify(json)}`);
           }
 

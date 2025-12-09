@@ -8,11 +8,14 @@ This project consists of a Discord bot that recieves UDP packets meant for recor
 1. Download the zip file and extract it with `tar -xzvf <filename>`
     1. Once downloaded, `cd discordbot`.
     2. Install the node dependencies by doing `npm install`.
-    3. If you do not have python, install that before continuing.
+    3. If you do not have python, install python3.12 before continuing.
 2. Install the python dependencies by doing `python3 -m venv ./src/commands/voice/networking/.venv`
     1. Then after that, do `./src/commands/voice/networking/.venv/bin/pip3 install -r ./src/commands/voice/networking/requirements.txt`
-3. Replace the .env variables `GUILD_ID` and `CHANNEL_ID` with your respective IDs. This is optional.
-4. Invite the Discord bot to a test server using this link: [Discord Bot Invite](https://discord.com/oauth2/authorize?client_id=1447798146603290736)
+3. Install tshark by doing this: `sudo apt update && sudo apt install tshark ffmpeg` and allow non-superusers to capture packets.
+4. Join this discord server: [Discord Server](https://discord.gg/smmdNmFDpg)
+    1. For stability purposes, allow Wireshark to run on non-root users by running the commmand `sudo dpkg-reconfigure wireshark-common` and select yes
+    2. Add the current user to the wireshark group: `sudo usermod -aG wireshark $USER`
+    3. Apply the changes `newgrp wireshark`
 5. Start up the discord bot by running: `npm run dev`
 6. Join a voice channel on the Discord server that you invited the bot to.
 7. Run `/join` in a text channel that the bot has access to.
@@ -23,6 +26,7 @@ This project consists of a Discord bot that recieves UDP packets meant for recor
 `/join` - Bot joins the voice channel you are currently in.
 
 `/leave` - Bot leaves the voice channel it is currently in.
+
 `/record` - Initates the record request now start selecting adding the user that will be recorded.
 
 `/stop-recording` - Stops the current recording session.

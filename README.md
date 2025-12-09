@@ -5,14 +5,18 @@
 This project consists of a Discord bot that recieves UDP packets meant for recording voice data meant for FragComms. These packets are not only processed but also monitored for debugging purposes, specifically for monitoring packet loss and latency. The bot can be interacted with through Discord commands to start and stop monitoring, as well as to retrieve statistics about the received packets.
 
 ## Setup Instructions
-1. Add the Discord Bot to a server you manage through this invite link: 
-2. Install the dependencies by running the following commands in your terminal:
-`npm install` and `pip install requirements.txt`
-3. Start up the discord bot by running:
-`npm run dev`
-4. Utilize the bot through Discord commands to start and stop monitoring, as well as to retrieve statistics about the received packets. Refer to the bot command list below for more details.
-5. Now watch the command line to see the UDP packets being monitored in real-time!
-6. You can create a mock packet loss through the throttle which can be found in the throttle guide below.
+1. Download the zip file and extract it
+    1. Once downloaded, `cd discordbot`.
+    2. Install the node dependencies by doing `npm install`.
+    3. If you do not have python, install that before continuing.
+2. Install the python dependencies by doing `python3 -m venv ./src/commands/voice/networking/.venv`
+    1. Then after that, do `./src/commands/voice/networking/.venv/bin/pip3 install -r ./src/commands/voice/networking/requirements.txt`
+3. Replace the .env variables `GUILD_ID` and `CHANNEL_ID` with your respective IDs. This is optional.
+4. Start up the discord bot by running: `npm run dev`
+5. Join a voice channel on the Discord server that you invited the bot to.
+6. Run `/join` in a text channel that the bot has access to.
+7. Run `/record` in a text channel that the bot has access to.
+8. Now, talk for about ~5 seconds. You will now see a lot of debug messages on the terminal! Congrats, everything is set up!
 
 ## Bot Command List
 `/join` - Bot joins the voice channel you are currently in.
@@ -50,5 +54,5 @@ The protocol implemented in this project is designed to handle UDP packets that 
 5. **Non-RTP Packets:** Any packets that aren't RDP will be ignored, allowing for no interference from other packets being sent across the same socket when monitoring RTP packets.
 6. **Threshold-Based Alerts:**  
 
-### Resuslts and Analysis
+### Results and Analysis
 The bot successfully monitors UDP packets and provides real-time statistics on jittering and latency. 

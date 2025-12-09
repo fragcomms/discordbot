@@ -40,14 +40,15 @@ This will affect all UDP packets on your system. You can adjust the `--packetLos
 
 ## Technical Report
 ### Functionality of the Protocol
-The protocol implemented in this project is designed to handle UDP packets that contain voice data for FragComms. The bot listens for incoming UDP packets on a specified port and processes them to extract relevant information such as sequence numbers and timestamps. This information is then used to monitor packet loss and latency, providing valuable insights into the quality of the voice communication.
+The protocol implemented in this project is designed to handle UDP packets that contain voice data for FragComms. The bot listens for incoming UDP packets on a specified port and processes them to extract relevant information such as sequence numbers and timestamps. This information is then used to mainly monitor jitter and latency, with packet loss added but is not testable as the Discord infrastructure would have to be failing, providing valuable insights into the quality of the voice communication.
 
 ### Possible Scenarios Handled
-1. **Socket Exception**: 
-2. **Different Network Qualities**:
-3. **High Packet Loss**: Should flag files that have high packet loss for review.
-4. **Discord Packet Fillers**: Handles packets that may be missing or corrupted due to network issues.
-5. **Multiple Users**: Can handle recording requests for multiple users in a voice channel.
+1. **Different Network Qualities**: Tested with different network qualities and the jitter is consistently monitored and recorded with high accuracy.
+2. **Discord Packet Fillers**: Discord servers send us packets that are always in sequence meaning packet loss can't be identified through sequence numbers. Which is why if the Discord servers were to fail then our packet loss would be able to detect it then.
+3. **Multiple Users**: Can handle recording requests for multiple users in a voice channel, so the audio will come back with multiple channels depending on the number of users. For every packet being printed to console, different users can be identified by the different SSRC number.
+4. **Silence Gaps:** The code checks for gaps in where there is silence in the voice data and handles them appropriately. This is done by calculating the audio time gap being greater than 80ms and then reseting the jitter base baseline if it is so.
+5. **Non-RTP Packets:** Any packets that aren't RDP will be ignored, allowing for no interference from other packets being sent across the same socket when monitoring RTP packets.
+6. **Threshold-Based Alerts:**  
 
 ### Resuslts and Analysis
-The bot successfully monitors UDP packets and provides real-time statistics on packet loss and latency. During testing, we encoutered issues from both libraries we used and the provided access from Discord like giving us filled packets when there was packet loss. However, we were able to implement workarounds to ensure accurate monitoring and recording of voice data. The bot's ability to handle different network conditions and provide useful insights makes it a valuable tool for debugging and improving voice communication quality in FragComms.
+The bot successfully monitors UDP packets and provides real-time statistics on jittering and latency. 

@@ -132,7 +132,8 @@ async function startPyshark(connection: VoiceConnection, guildId: string, users:
             const pysharkSSRC = parseInt(json.ssrc, 16); // Convert Hex to Int
 
             // print it generically so we know data is flowing
-            console.log(`[SSRC: ${json.ssrc}] Jitter: ${json.jitter} Sequence: ${json.seq}`);
+            console.log(`[SSRC: ${json.ssrc}] Max Jitter: ${json.max_jitter_ms} Average Jitter: ${json.avg_jitter_ms} Sequence: ${json.seq}
+                         Message from monitor.py: ${json.msg}`);
           } else {
             console.log(`[System] ${JSON.stringify(json)}`);
           }

@@ -28,7 +28,6 @@ def start_monitoring(interface, local_port):
                 seq = int(getattr(rtp, 'seq', 0))
                 rtp_time = int(getattr(rtp, 'timestamp', 0)) 
                 
-                # Use Kernel Timestamp
                 arrival_time_ms = float(packet.sniff_timestamp) * 1000 
                 
                 if not ssrc:
@@ -47,7 +46,8 @@ def start_monitoring(interface, local_port):
                 wall_diff = arrival_time_ms - user['last_arrival_time']
                 
                 rtp_diff = (rtp_time - user['last_rtp_time'])
-                if rtp_diff < -2147483648: rtp_diff += 4294967296 
+                if rtp_diff < -2147483648:
+                    rtp_diff += 4294967296 
                 
                 audio_diff_ms = (rtp_diff / 48000) * 1000
 
@@ -56,7 +56,7 @@ def start_monitoring(interface, local_port):
                     print(json.dumps({
                         "type": "debug", 
                         "ssrc": ssrc,
-                        "msg": "Silence gap detected (Resetting Jitter)",
+                        "msg": "Silence gap detected (resetting jitter)",
                         "gap_ms": int(audio_diff_ms)
                     }))
                     sys.stdout.flush()
@@ -82,7 +82,7 @@ def start_monitoring(interface, local_port):
                 user['last_arrival_time'] = arrival_time_ms
                 user['last_rtp_time'] = rtp_time
 
-                # --- PACKET LOSS --- doesnt work
+                # --- PACKET LOSS ---
                 if seq > user['highest_seq']:
                     diff = (seq - user['highest_seq']) & 0xFFFF 
                     if diff > 1:
@@ -91,7 +91,8 @@ def start_monitoring(interface, local_port):
                             print(json.dumps({
                                 "type": "loss", 
                                 "ssrc": ssrc, 
-                                "lost": loss_event
+                                "lost": loss_event,
+                                "msg": "🔴 packet loss"
                             }))
                             sys.stdout.flush()
                     

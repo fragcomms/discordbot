@@ -164,7 +164,7 @@ def start_monitoring(interface, local_port):
                                 "type": "loss", 
                                 "ssrc": ssrc, 
                                 "lost": loss_event,
-                                "msg": "🔴 packet loss",
+                                "msg": "packet loss",
                                 "severity": "HIGH" if loss_event > 5 else "MEDIUM"
                             }))
                             sys.stdout.flush()

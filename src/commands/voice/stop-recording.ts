@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { SlashCommandBuilder, ChatInputCommandInteraction } from "discord.js";
 import { cleanUpProcess } from "../utility/cleanup.js";
-import { recordings } from '../utility/recordings.js';
+import { recordings, monitors } from '../utility/recordings.js';
 
 const data = new SlashCommandBuilder()
   .setName('stop-recording')
@@ -32,6 +32,13 @@ async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   await interaction.reply('Stopping recording, processing files...');
+
+  const monitor = monitors.get(guildId);
+  if (monitor) {
+      console.log(`[${guildId}] Killing Pyshark monitor manually.`);
+      monitor.kill(); 
+      monitors.delete(guildId);
+  }
 
   //STOP AND PROCESS ALL ACTIVE RECORDINGS
   cleanUpProcess(guildId, channelId, interaction.guild.members.me!.voice.channel!.id, client);

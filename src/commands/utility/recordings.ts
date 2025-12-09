@@ -4,6 +4,7 @@ import { AudioReceiveStream } from '@discordjs/voice';
 import { User } from 'discord.js'
 import ffmpeg from 'ffmpeg-static'
 // import { OpusStream } from 'prism-media/typings/opus.js'
+import { ChildProcess } from 'node:child_process';
 
 export interface Recording {
     opusStream: AudioReceiveStream;
@@ -32,6 +33,8 @@ export function logRecordings() {
 
 // Map of <guildId, Recording[]>
 export const recordings = new Map<string, Recording[]>();
+
+export const monitors = new Map<string, ChildProcess>();
 
 
 

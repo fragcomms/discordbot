@@ -12,7 +12,7 @@ This project consists of a Discord bot that recieves UDP packets meant for recor
 2. Install the python dependencies by doing `python3 -m venv ./src/commands/voice/networking/.venv`
     1. Then after that, do `./src/commands/voice/networking/.venv/bin/pip3 install -r ./src/commands/voice/networking/requirements.txt`
 3. Replace the .env variables `GUILD_ID` and `CHANNEL_ID` with your respective IDs. This is optional.
-4. Invite the Discord bot to a test server using this link: 
+4. Invite the Discord bot to a test server using this link: [Discord Bot Invite](https://discord.com/oauth2/authorize?client_id=1447798146603290736)
 5. Start up the discord bot by running: `npm run dev`
 6. Join a voice channel on the Discord server that you invited the bot to.
 7. Run `/join` in a text channel that the bot has access to.

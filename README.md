@@ -4,8 +4,8 @@
 ## Project Description
 This project consists of a Discord bot that recieves UDP packets meant for recording voice data meant for FragComms. These packets are not only processed but also monitored for debugging purposes, specifically for monitoring packet loss and latency. The bot can be interacted with through Discord commands to start and stop monitoring, as well as to retrieve statistics about the received packets.
 
-## Setup Instructions
-1. Download the zip file and extract it
+## Setup Instructions FOR LINUX
+1. Download the zip file and extract it with `tar -xzvf <filename>`
     1. Once downloaded, `cd discordbot`.
     2. Install the node dependencies by doing `npm install`.
     3. If you do not have python, install that before continuing.

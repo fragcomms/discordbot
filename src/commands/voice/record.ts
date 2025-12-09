@@ -118,8 +118,7 @@ async function startPyshark(connection: VoiceConnection, guildId: string, users:
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    const receiver = connection.receiver;
-
+    // --- UPDATED STDOUT HANDLER ---
     pysharkProcess.stdout.on('data', (data) => {
       const lines = data.toString().split('\n');
       for (const line of lines) {
@@ -128,21 +127,64 @@ async function startPyshark(connection: VoiceConnection, guildId: string, users:
         try {
           const json = JSON.parse(line);
 
-          if (json.ssrc) {
-            const pysharkSSRC = parseInt(json.ssrc, 16); // Convert Hex to Int
+          // Handle startup message (doesn't have 'type', uses 'status')
+          if (json.status === 'started') {
+            console.log(`[Monitor] ${json.msg} (Port: ${json.port})`);
+            continue;
+          }
 
-            // print it generically so we know data is flowing
-            console.log(`[SSRC: ${json.ssrc}] Max Jitter: ${json.max_jitter_ms} Average Jitter: ${json.avg_jitter_ms} Sequence: ${json.seq}
-                         Message from monitor.py: ${json.msg}`);
-          } else {
-            console.log(`[System] ${JSON.stringify(json)}`);
+          // Handle standard message types
+          switch (json.type) {
+            case 'stats':
+              console.log(`[Stats] [SSRC: ${json.ssrc}] Seq: ${json.seq} | Jitter: ${json.current_jitter_ms}ms (Avg: ${json.avg_jitter_ms}ms) | Pkts: ${json.packets}`);
+              break;
+
+            case 'loss':
+              console.log(`[LOSS] [SSRC: ${json.ssrc}] ${json.msg} (Lost: ${json.lost}) Severity: ${json.severity}`);
+              break;
+
+            case 'alert':
+              // Use console.warn for alerts
+              console.warn(`[ALERT] [SSRC: ${json.ssrc}] ${json.msg} | Avg: ${json.avg_jitter_ms}ms | Max: ${json.max_jitter_ms}ms | ${json.suggestion}`);
+              break;
+
+            case 'debug':
+              // Only print debug if you really want to see silence gaps
+              console.log(`[Debug] [SSRC: ${json.ssrc}] ${json.msg} (Gap: ${json.gap_ms}ms)`);
+              break;
+
+            case 'info':
+              console.log(`[Info] [SSRC: ${json.ssrc}] ${json.msg} | Avg Jitter: ${json.avg_jitter_ms}ms`);
+              break;
+            
+            case 'error':
+              console.error(`[Monitor Error] ${json.msg}`);
+              break;
+
+            case 'final_stats':
+              console.log(`[Final] [SSRC: ${json.ssrc}] Total: ${json.total_packets} | Final Avg: ${json.avg_jitter_ms}ms | Events: ${json.high_jitter_events} High / ${json.critical_jitter_events} Crit`);
+              break;
+
+            case 'shutdown':
+               console.log(`[Monitor] ${json.msg}`);
+               break;
+
+            default:
+              // Fallback for unknown messages
+              if (json.ssrc) {
+                console.log(`[Unknown Type] [SSRC: ${json.ssrc}] ${JSON.stringify(json)}`);
+              } else {
+                console.log(`[System] ${JSON.stringify(json)}`);
+              }
           }
 
         } catch (e) {
-          console.log(`[Parse Error] ${line}`);
+          // If a line isn't JSON, just print it raw
+          console.log(`[Raw Output] ${line}`);
         }
       }
     });
+    // ------------------------------
 
     pysharkProcess.stderr.on('data', (data) => {
       console.error(`[Pyshark Stderr]: ${data}`);

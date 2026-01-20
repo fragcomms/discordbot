@@ -83,7 +83,7 @@ class PGManager {
   public async insertAudioRecord(fileExt: string, remotePath: string, timestamp: number): Promise<string | null> {
     try {
       const query = `
-        INSERT INTO public.audios (file_ext, path, sampling_rate, creation_time) 
+        INSERT INTO public.audios (file_ext, file_path, sampling_rate, creation_time) 
         VALUES ($1, $2, $3, $4) 
         RETURNING audio_id;`
       const values = [fileExt, remotePath, '20000', new Date(timestamp)];
@@ -193,11 +193,10 @@ export class RecordingSessionManager {
 
     sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`)
 
-    // ex: /home/user/bigserverid/bigchannelid
-    const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}`;
-    // ex: bigtimestamp.mka
-    const remoteFileName = `${timestamp}.mka`;
-    // ex: /home/user/bigserverid/bigchannelid/bigtimestamp.mka
+    // ex: /home/user/bigserverid/bigchannelid/timestamp
+    const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}/${timestamp}`;
+    const remoteFileName = `audio.mka`;
+    // ex: /home/user/bigserverid/bigchannelid/timestamp/audio.mka
     const remoteFullPath = `${remoteDir}/${remoteFileName}`;
 
     const uploadSuccess = await this.scp.transferAudio(wavPath, remoteDir, remoteFileName)

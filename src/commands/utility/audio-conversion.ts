@@ -77,6 +77,7 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: numbe
   for (const [index, value] of pcmFiles.entries()) {
     await padPcmFile(value, maxSize)
     ffmpegArgs.push('-map', `${index}:a`)
+    ffmpegArgs.push(`-metadata:s:a:${index}`, `title=${path.basename(path.dirname(value))}`)
   }
   ffmpegArgs.push(
     '-c:a', 'libopus', 

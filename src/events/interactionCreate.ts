@@ -1,46 +1,43 @@
-import { Events, MessageFlags, ChatInputCommandInteraction } from 'discord.js'
-import { ExtendedClient } from '../types/ExtendedClient.js'
-import { lastChannelInteraction } from '../commands/utility/last-channel-interaction.js'
+import { ChatInputCommandInteraction, Events, MessageFlags } from "discord.js";
+import { lastChannelInteraction } from "../commands/utility/last-channel-interaction.js";
+import { ExtendedClient } from "../types/ExtendedClient.js";
 
-const name = Events.InteractionCreate
+const name = Events.InteractionCreate;
 async function execute(interaction: ChatInputCommandInteraction) {
-  if (!interaction.isChatInputCommand()) { return }
+  if (!interaction.isChatInputCommand()) return;
 
-  const command = (interaction.client as ExtendedClient).commands.get(interaction.commandName)
+  const command = (interaction.client as ExtendedClient).commands.get(interaction.commandName);
   if (!command) {
     console.error(`No command matching ${interaction.commandName} was found.`);
     return;
   }
 
-
-
   try {
     // console.log(interaction)
-    await command.execute(interaction)
+    await command.execute(interaction);
     // store guild & channel in map
-      const channelId = interaction.channelId;
-      const guildId = interaction.guildId;
-      lastChannelInteraction.set(guildId!,channelId); // store
+    const channelId = interaction.channelId;
+    const guildId = interaction.guildId;
+    lastChannelInteraction.set(guildId!, channelId); // store
 
-      //log to track channel id for disconnects
-      console.log(`Command used.`);
-      console.log(`Guild - ${lastChannelInteraction.keys().next().value}`);
-      console.log(`Channel - ${lastChannelInteraction.get(guildId!)}`);
-      
+    // log to track channel id for disconnects
+    console.log(`Command used.`);
+    console.log(`Guild - ${lastChannelInteraction.keys().next().value}`);
+    console.log(`Channel - ${lastChannelInteraction.get(guildId!)}`);
   } catch (error) {
-    console.error(error)
+    console.error(error);
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({
-        content: 'There was an error while executing this command!',
+        content: "There was an error while executing this command!",
         flags: MessageFlags.Ephemeral,
       });
     } else {
       await interaction.reply({
-        content: 'There was an error while executing this command!',
+        content: "There was an error while executing this command!",
         flags: MessageFlags.Ephemeral,
       });
     }
   }
 }
 
-export { name, execute }
+export { execute, name };

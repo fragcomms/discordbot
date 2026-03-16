@@ -1,17 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // NOT A SLASH COMMAND, IT HOLDS THE recording object that /record and /stop-recording use
-import { AudioReceiveStream } from '@discordjs/voice';
-import { User } from 'discord.js'
-import ffmpeg from 'ffmpeg-static'
+import { AudioReceiveStream } from "@discordjs/voice";
+import { User } from "discord.js";
+import ffmpeg from "ffmpeg-static";
 // import { OpusStream } from 'prism-media/typings/opus.js'
 
 export interface Recording {
-    opusStream: AudioReceiveStream;
-    filePath: string;   // filePath
-    user: User;        // User object 
-    timestamp: string;
-    latency: number;
-    filePrefix: string;
+  opusStream: AudioReceiveStream;
+  filePath: string; // filePath
+  user: User; // User object
+  timestamp: string;
+  latency: number;
+  filePrefix: string;
 }
 
 export function logRecordings() {
@@ -20,7 +20,7 @@ export function logRecordings() {
     console.log(`  Channel ${channelId}:`);
     for (const rec of recs) {
       console.log(
-        `    - ${rec.user.username} → ${rec.filePath} [stream active: ${!rec.opusStream.destroyed}]`
+        `    - ${rec.user.username} → ${rec.filePath} [stream active: ${!rec.opusStream.destroyed}]`,
       );
     }
   }
@@ -28,15 +28,9 @@ export function logRecordings() {
 }
 
 // // stop all recordings (in case bot disconnects/crashes)
-// export async function stopRecordings(guildId: string) { 
+// export async function stopRecordings(guildId: string) {
 
 // }
 
 // Map of <guildId, Recording[]>
 export const recordings = new Map<string, Recording[]>();
-
-
-
-
-
-

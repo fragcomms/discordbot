@@ -1,15 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-//TODO: stop recording when bot is force disconnected, this should be done for everything
-import { recordings, Recording } from "./recordings.js";
-import { convertMultiplePcmToMka } from "./audio-conversion.js";
-import path from "node:path";
+// TODO: stop recording when bot is force disconnected, this should be done for everything
+import { getVoiceConnection } from "@discordjs/voice";
 import { Client as DiscordClient } from "discord.js";
+import dotenv from "dotenv";
+import { Client as SCPClient } from "node-scp";
+import path from "node:path";
+import { Pool as PGPool } from "pg";
+import { convertMultiplePcmToMka } from "./audio-conversion.js";
 import { sendMessage } from "./messages.js";
-import { Client as SCPClient } from 'node-scp'
-import { Pool as PGPool } from 'pg'
-import { getVoiceConnection } from '@discordjs/voice';
-import dotenv from 'dotenv'
-dotenv.config()
+import { Recording, recordings } from "./recordings.js";
+dotenv.config();
 
 /**
  * decided to refactor the code - aaron
@@ -25,33 +25,33 @@ class SCPManager {
       port: process.env.SCP_PORT,
       username: process.env.SCP_USER,
       password: process.env.SCP_PASS,
-    }
+    };
   }
 
   public async transferAudio(localPath: string, remoteDir: string, remoteFileName: string): Promise<boolean> {
     try {
-      const scp = await SCPClient(this.config)
-      const remotePath = `${remoteDir}/${remoteFileName}`
+      const scp = await SCPClient(this.config);
+      const remotePath = `${remoteDir}/${remoteFileName}`;
       if (!(await scp.exists(remoteDir))) {
-        console.log(`Creating remote directory: ${remoteDir}`)
-        await scp.mkdir(remoteDir, undefined, { recursive: true })
+        console.log(`Creating remote directory: ${remoteDir}`);
+        await scp.mkdir(remoteDir, undefined, { recursive: true });
         // recursive mkdir required because of new server ids
       }
 
-      console.log(`Uploading ${localPath} to ${remotePath}...`)
-      await scp.uploadFile(localPath, remotePath)
-      console.log("Upload successful")
-      scp.close()
+      console.log(`Uploading ${localPath} to ${remotePath}...`);
+      await scp.uploadFile(localPath, remotePath);
+      console.log("Upload successful");
+      scp.close();
 
-      return true
+      return true;
     } catch (e) {
-      console.error("Transfer failed:", e)
-      return false
+      console.error("Transfer failed:", e);
+      return false;
     }
   }
 }
 
-//postgres connection and query manager
+// postgres connection and query manager
 class PGManager {
   private pool: PGPool;
 
@@ -61,7 +61,7 @@ class PGManager {
       password: process.env.PG_PASS,
       host: process.env.PG_HOST,
       database: process.env.PG_DB,
-    })
+    });
   }
 
   // separating these connects gives more clarity in the code
@@ -76,26 +76,31 @@ class PGManager {
   // }
 
   public async shutdown(): Promise<void> {
-    await this.pool.end()
+    await this.pool.end();
     console.log("Database pool shut down");
   }
 
   // returns newId or null, null to show it failed
-  public async insertAudioRecord(fileExt: string, remotePath: string, timestampIso: string, latencyMs: number): Promise<string | null> {
+  public async insertAudioRecord(
+    fileExt: string,
+    remotePath: string,
+    timestampIso: string,
+    latencyMs: number,
+  ): Promise<string | null> {
     try {
       const query = `
         INSERT INTO public.audios (file_ext, file_path, sampling_rate, creation_time, latency_ms) 
         VALUES ($1, $2, $3, $4, $5) 
-        RETURNING audio_id;`
-      const values = [fileExt, remotePath, '20000', timestampIso, latencyMs];
+        RETURNING audio_id;`;
+      const values = [fileExt, remotePath, "20000", timestampIso, latencyMs];
       // all sampling rate will default to 20000, may change later in the future
       const res = await this.pool.query(query, values);
-      
+
       const newId = res.rows[0]?.audio_id;
       console.log(`Inserted Audio Record. ID: ${newId}`);
       return newId;
     } catch (e) {
-      console.log("Failed to insert audio record:", e)
+      console.log("Failed to insert audio record:", e);
       return null;
     }
   }
@@ -106,12 +111,12 @@ class PGManager {
       const query = `
         INSERT INTO public.users (discord_id, created_at, discord_username) 
         VALUES ($1, $2, $3) 
-        ON CONFLICT (discord_id) DO NOTHING;`
+        ON CONFLICT (discord_id) DO NOTHING;`;
       // frankly i dont like this "do nothing"
       // may change in future
       await this.pool.query(query, [discordId, timestampIso, username]);
     } catch (e) {
-      console.error(`Failed to ensure user ${username} exists:`, e)
+      console.error(`Failed to ensure user ${username} exists:`, e);
     }
   }
 
@@ -121,13 +126,13 @@ class PGManager {
       const query = `
         INSERT INTO public.media_access (discord_id, audio_id) 
         VALUES ($1, $2)
-        ON CONFLICT DO NOTHING;`
+        ON CONFLICT DO NOTHING;`;
       // ok i actually dont like this conflict one,
       // im not even sure if i want it in this as its
       // theoretically impossible to get a duplicate entry
-      await this.pool.query(query, [discordId, audioId])
+      await this.pool.query(query, [discordId, audioId]);
     } catch (e) {
-      console.error(`Failed to grant access for user ${discordId}:`, e)
+      console.error(`Failed to grant access for user ${discordId}:`, e);
     }
   }
 }
@@ -138,47 +143,51 @@ class PGManager {
  */
 export class RecordingSessionManager {
   // dont want any exploits to get access to db/scp
-  private db: PGManager
-  private scp: SCPManager
+  private db: PGManager;
+  private scp: SCPManager;
 
   constructor() {
-    this.db = new PGManager
-    this.scp = new SCPManager
+    this.db = new PGManager();
+    this.scp = new SCPManager();
   }
 
   // grabs all active recordings and destroys them
   private stopActiveStreams(guildRecordings: Recording[], client: DiscordClient, channelId: string) {
     for (const recording of guildRecordings) {
       try {
-        recording.opusStream.destroy()
+        recording.opusStream.destroy();
       } catch (error) {
-        console.error(error)
+        console.error(error);
         sendMessage(client, channelId, `Could not stop recording for ${recording.user.username}:`);
       }
     }
   }
 
   // saves the recordings to database
-  private async saveToDatabase(guildRecordings: Recording[], remoteFullPath: string, timestampIso: string, latencyMs: number) {
+  private async saveToDatabase(
+    guildRecordings: Recording[],
+    remoteFullPath: string,
+    timestampIso: string,
+    latencyMs: number,
+  ) {
     try {
-
-      const audioId = await this.db.insertAudioRecord('mka', remoteFullPath, timestampIso, latencyMs)
+      const audioId = await this.db.insertAudioRecord("mka", remoteFullPath, timestampIso, latencyMs);
 
       if (audioId) {
         // makes sure all users getting recorded get their proper permissions and tables inside our database
         for (const recording of guildRecordings) {
-          await this.db.ensureUserExists(recording.user.id, recording.user.username, timestampIso)
-          await this.db.grantUserAccess(recording.user.id, audioId)
+          await this.db.ensureUserExists(recording.user.id, recording.user.username, timestampIso);
+          await this.db.grantUserAccess(recording.user.id, audioId);
         }
       }
     } catch (e) {
-      console.error("Database Transaction Failed", e)
+      console.error("Database Transaction Failed", e);
     }
   }
 
   // ends recording session
   public async endSession(guildId: string, channelId: string, voiceChannelId: string, client: DiscordClient) {
-    const guildRecordings = recordings.get(guildId)
+    const guildRecordings = recordings.get(guildId);
 
     if (!guildRecordings || guildRecordings.length === 0) {
       console.log(`No recordings in progress`);
@@ -189,15 +198,15 @@ export class RecordingSessionManager {
     const networkPing = connection?.ping.ws ?? client.ws.ping;
     console.log(`[Network] Final Voice Ping for session: ${networkPing}ms`);
 
-    this.stopActiveStreams(guildRecordings, client, channelId)
+    this.stopActiveStreams(guildRecordings, client, channelId);
 
     // vars to help make it plug and play
     const timestampIso = guildRecordings[0].timestamp;
     const filePrefix = Number(guildRecordings[0].filePrefix);
-    const localDir = path.join(process.cwd(), 'data', guildId, voiceChannelId)
-    const wavPath = await convertMultiplePcmToMka(localDir, filePrefix)
+    const localDir = path.join(process.cwd(), "data", guildId, voiceChannelId);
+    const wavPath = await convertMultiplePcmToMka(localDir, filePrefix);
 
-    sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`)
+    sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`);
 
     // ex: /home/user/bigserverid/bigchannelid/timestamp
     const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}/${filePrefix}`;
@@ -205,25 +214,29 @@ export class RecordingSessionManager {
     // ex: /home/user/bigserverid/bigchannelid/timestamp/audio.mka
     const remoteFullPath = `${remoteDir}/${remoteFileName}`;
 
-    const uploadSuccess = await this.scp.transferAudio(wavPath, remoteDir, remoteFileName)
+    const uploadSuccess = await this.scp.transferAudio(wavPath, remoteDir, remoteFileName);
 
     if (uploadSuccess) {
-      await this.saveToDatabase(guildRecordings, remoteFullPath, timestampIso, networkPing)
+      await this.saveToDatabase(guildRecordings, remoteFullPath, timestampIso, networkPing);
     } else {
-      sendMessage(client, channelId, "Audio processing finished, but upload to storage server failed.")
+      sendMessage(client, channelId, "Audio processing finished, but upload to storage server failed.");
     }
 
-    recordings.delete(guildId)
-    //TODO: cleanup
+    recordings.delete(guildId);
+    // TODO: cleanup
   }
 }
 
-const sessionManager = new RecordingSessionManager()
+const sessionManager = new RecordingSessionManager();
 
-export async function cleanUpProcess(guildId: string, channelId: string, voiceChannelId: string, client: DiscordClient) {
+export async function cleanUpProcess(
+  guildId: string,
+  channelId: string,
+  voiceChannelId: string,
+  client: DiscordClient,
+) {
   await sessionManager.endSession(guildId, channelId, voiceChannelId, client);
 }
-
 
 /*
 
@@ -232,5 +245,3 @@ export async function cleanUpProcess(guildId: string, channelId: string, voiceCh
 3. SEND MESSAGE
 
 */
-
-

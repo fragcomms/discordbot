@@ -1,4 +1,4 @@
-import * as crypto from 'node:crypto';
+import * as crypto from "node:crypto";
 
 interface PacketInfo {
   sequenceNum: number;
@@ -18,13 +18,13 @@ export class UDPIntegrityMonitor {
   private corruptedPackets: number[] = [];
   private sequenceCounter = 0;
 
-  private log(msg: string, level: 'INFO' | 'WARN' | 'ERROR' = 'INFO') {
+  private log(msg: string, level: "INFO" | "WARN" | "ERROR" = "INFO") {
     const ts = new Date().toISOString();
     console.log(`[${ts}] [${level}] ${msg}`);
   }
 
   private calculateChecksum(data: Buffer): string {
-    return crypto.createHash('sha256').update(data).digest('hex');
+    return crypto.createHash("sha256").update(data).digest("hex");
   }
 
   /** Wrap payload with header + checksum so it can be sent/verified if needed. */
@@ -39,7 +39,7 @@ export class UDPIntegrityMonitor {
     header.writeBigUInt64BE(BigInt(timestamp), 4);
     header.writeUInt16BE(size, 12);
 
-    const monitoredPacket = Buffer.concat([header, payload, Buffer.from(checksum, 'utf-8')]);
+    const monitoredPacket = Buffer.concat([header, payload, Buffer.from(checksum, "utf-8")]);
 
     this.packetLog.set(sequence, {
       sequenceNum: sequence,
@@ -62,14 +62,14 @@ export class UDPIntegrityMonitor {
       const sequence = header.readUInt32BE(0);
       const size = header.readUInt16BE(12);
       const payload = receivedPacket.subarray(headerSize, headerSize + size);
-      const receivedChecksum = receivedPacket.subarray(headerSize + size).toString('utf-8');
+      const receivedChecksum = receivedPacket.subarray(headerSize + size).toString("utf-8");
 
       const calculatedChecksum = this.calculateChecksum(payload);
 
       if (receivedChecksum !== calculatedChecksum) {
         const msg = `Checksum mismatch for packet ${sequence}`;
         this.corruptedPackets.push(sequence);
-        this.log(msg, 'WARN');
+        this.log(msg, "WARN");
         return [false, payload, msg];
       }
 
@@ -81,16 +81,16 @@ export class UDPIntegrityMonitor {
           for (let i = expected; i < sequence; i++) lost.push(i);
           if (lost.length) {
             this.lostPackets.push(...lost);
-            this.log(`Lost packets detected: ${lost.join(', ')}`, 'WARN');
+            this.log(`Lost packets detected: ${lost.join(", ")}`, "WARN");
           }
         }
       }
 
       this.log(`Packet ${sequence} verified successfully`);
-      return [true, payload, 'OK'];
+      return [true, payload, "OK"];
     } catch (err) {
       const msg = `Error verifying packet: ${err instanceof Error ? err.message : String(err)}`;
-      this.log(msg, 'ERROR');
+      this.log(msg, "ERROR");
       return [false, Buffer.alloc(0), msg];
     }
   }
@@ -107,7 +107,9 @@ export class UDPIntegrityMonitor {
   public logStats() {
     const s = this.getStatistics();
     this.log(
-      `UDP Stats - Total: ${s.totalPackets} | Lost: ${s.lostPackets} | Corrupted: ${s.corruptedPackets} | Success: ${s.successRate.toFixed(2)}%`
+      `UDP Stats - Total: ${s.totalPackets} | Lost: ${s.lostPackets} | Corrupted: ${s.corruptedPackets} | Success: ${
+        s.successRate.toFixed(2)
+      }%`,
     );
   }
 
@@ -116,6 +118,6 @@ export class UDPIntegrityMonitor {
     this.lostPackets = [];
     this.corruptedPackets = [];
     this.sequenceCounter = 0;
-    this.log('Monitor reset');
+    this.log("Monitor reset");
   }
 }

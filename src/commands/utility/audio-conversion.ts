@@ -7,7 +7,6 @@ import fs from 'fs'
 import path from 'path'
 
 //exportable function pcm -> wav
-//ONLY FOR TESTING PURPOSES
 export async function convertPcmToWav(user: User, filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
 

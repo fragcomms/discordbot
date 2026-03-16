@@ -7,6 +7,7 @@ import { Client as DiscordClient } from "discord.js";
 import { sendMessage } from "./messages.js";
 import { Client as SCPClient } from 'node-scp'
 import { Pool as PGPool } from 'pg'
+import { getVoiceConnection } from '@discordjs/voice';
 import dotenv from 'dotenv'
 dotenv.config()
 
@@ -80,13 +81,13 @@ class PGManager {
   }
 
   // returns newId or null, null to show it failed
-  public async insertAudioRecord(fileExt: string, remotePath: string, timestamp: number): Promise<string | null> {
+  public async insertAudioRecord(fileExt: string, remotePath: string, timestampIso: string, latencyMs: number): Promise<string | null> {
     try {
       const query = `
-        INSERT INTO public.audios (file_ext, file_path, sampling_rate, creation_time) 
-        VALUES ($1, $2, $3, $4) 
+        INSERT INTO public.audios (file_ext, file_path, sampling_rate, creation_time, latency_ms) 
+        VALUES ($1, $2, $3, $4, $5) 
         RETURNING audio_id;`
-      const values = [fileExt, remotePath, '20000', new Date(timestamp)];
+      const values = [fileExt, remotePath, '20000', timestampIso, latencyMs];
       // all sampling rate will default to 20000, may change later in the future
       const res = await this.pool.query(query, values);
       
@@ -100,7 +101,7 @@ class PGManager {
   }
 
   // makes sure that the user exists
-  public async ensureUserExists(discordId: string, username: string, timestamp: number): Promise<void> {
+  public async ensureUserExists(discordId: string, username: string, timestampIso: string): Promise<void> {
     try {
       const query = `
         INSERT INTO public.users (discord_id, created_at, discord_username) 
@@ -108,7 +109,7 @@ class PGManager {
         ON CONFLICT (discord_id) DO NOTHING;`
       // frankly i dont like this "do nothing"
       // may change in future
-      await this.pool.query(query, [discordId, new Date(timestamp), username]);
+      await this.pool.query(query, [discordId, timestampIso, username]);
     } catch (e) {
       console.error(`Failed to ensure user ${username} exists:`, e)
     }
@@ -158,15 +159,15 @@ export class RecordingSessionManager {
   }
 
   // saves the recordings to database
-  private async saveToDatabase(guildRecordings: Recording[], remoteFullPath: string, timestamp: number) {
+  private async saveToDatabase(guildRecordings: Recording[], remoteFullPath: string, timestampIso: string, latencyMs: number) {
     try {
 
-      const audioId = await this.db.insertAudioRecord('mka', remoteFullPath, timestamp)
+      const audioId = await this.db.insertAudioRecord('mka', remoteFullPath, timestampIso, latencyMs)
 
       if (audioId) {
         // makes sure all users getting recorded get their proper permissions and tables inside our database
         for (const recording of guildRecordings) {
-          await this.db.ensureUserExists(recording.user.id, recording.user.username, timestamp)
+          await this.db.ensureUserExists(recording.user.id, recording.user.username, timestampIso)
           await this.db.grantUserAccess(recording.user.id, audioId)
         }
       }
@@ -184,17 +185,22 @@ export class RecordingSessionManager {
       return;
     }
 
+    const connection = getVoiceConnection(guildId);
+    const networkPing = connection?.ping.ws ?? client.ws.ping;
+    console.log(`[Network] Final Voice Ping for session: ${networkPing}ms`);
+
     this.stopActiveStreams(guildRecordings, client, channelId)
 
     // vars to help make it plug and play
-    const timestamp = Number(guildRecordings[0].timestamp);
+    const timestampIso = guildRecordings[0].timestamp;
+    const filePrefix = Number(guildRecordings[0].filePrefix);
     const localDir = path.join(process.cwd(), 'data', guildId, voiceChannelId)
-    const wavPath = await convertMultiplePcmToMka(localDir, timestamp)
+    const wavPath = await convertMultiplePcmToMka(localDir, filePrefix)
 
     sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`)
 
     // ex: /home/user/bigserverid/bigchannelid/timestamp
-    const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}/${timestamp}`;
+    const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}/${filePrefix}`;
     const remoteFileName = `audio.mka`;
     // ex: /home/user/bigserverid/bigchannelid/timestamp/audio.mka
     const remoteFullPath = `${remoteDir}/${remoteFileName}`;
@@ -202,7 +208,7 @@ export class RecordingSessionManager {
     const uploadSuccess = await this.scp.transferAudio(wavPath, remoteDir, remoteFileName)
 
     if (uploadSuccess) {
-      await this.saveToDatabase(guildRecordings, remoteFullPath, timestamp)
+      await this.saveToDatabase(guildRecordings, remoteFullPath, timestampIso, networkPing)
     } else {
       sendMessage(client, channelId, "Audio processing finished, but upload to storage server failed.")
     }

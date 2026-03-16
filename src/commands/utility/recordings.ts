@@ -10,6 +10,8 @@ export interface Recording {
     filePath: string;   // filePath
     user: User;        // User object 
     timestamp: string;
+    latency: number;
+    filePrefix: string;
 }
 
 export function logRecordings() {

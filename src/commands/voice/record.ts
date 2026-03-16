@@ -7,11 +7,14 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as prism from 'prism-media'
 import { fileURLToPath } from 'node:url'
-import { spawn, exec } from 'child_process'
+// import { spawn, exec } from 'child_process'
 import ffmpeg from 'ffmpeg-static'
-import { OpusStream } from 'prism-media/typings/opus.js';
-import { Channel, channel } from 'node:diagnostics_channel';
+// import { OpusStream } from 'prism-media/typings/opus.js';
+// import { Channel, channel } from 'node:diagnostics_channel';
 import { UDPIntegrityMonitor } from '../../monitor/upd_integrity_monitor.js';
+// import { Transform, TransformCallback } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { PCMSilencePadder } from '../utility/pcm-padder.js';
 
 const ffmpegPath = ffmpeg as unknown as string
 
@@ -44,7 +47,7 @@ const data = new SlashCommandBuilder()
 const udpMonitors = new Map<string, UDPIntegrityMonitor>();
 
 //REQUIRED: FFmpeg installed on machine!!!!!!!!
-async function createListeningStream(receiver: VoiceReceiver, user: User, guildId: string, channelId: string, datenow: string) {
+async function createListeningStream(receiver: VoiceReceiver, user: User, guildId: string, channelId: string, filePrefix: string, commandStartTime: number, startIso: string) {
   // Initialize monitor for this user
   const udpMonitor = new UDPIntegrityMonitor();
   udpMonitors.set(user.id, udpMonitor);
@@ -52,6 +55,7 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   const opusStream = receiver.subscribe(user.id, {
     end: { behavior: EndBehaviorType.Manual },
   });
+  
   const decoder = new prism.opus.Decoder({
     rate: 48000,
     channels: 2,
@@ -61,36 +65,40 @@ async function createListeningStream(receiver: VoiceReceiver, user: User, guildI
   const dataDir = path.join(process.cwd(), 'data', guildId, channelId, user.id);
   fs.mkdirSync(dataDir, { recursive: true });
 
-  const filePath = path.join(dataDir, `${datenow}.pcm`);
+  const filePath = path.join(dataDir, `${filePrefix}.pcm`);
   const outputStream = fs.createWriteStream(filePath);
 
-  let lastPacketTime = Number(datenow);
-  opusStream.on('data', (chunk: Buffer) => {
-    const now = Date.now();
-    const delta = now - lastPacketTime;
+  const silencePadder = new PCMSilencePadder(commandStartTime);
 
-    // Track packet integrity locally (console only)
-    udpMonitor.createMonitoredPacket(chunk);
-    // Log stats every 500 packets
-    if (udpMonitor.getStatistics().totalPackets % 500 === 0) {
-      udpMonitor.logStats();
-    }
-
-    const missingFrames = Math.floor(delta / 20) - 1;
-    if (missingFrames > 0) {
-      const silence = Buffer.alloc(missingFrames * 960 * 2 * 2, 0);
-      outputStream.write(silence);
-    }
-    lastPacketTime = now;
+  opusStream.on('error', (error) => {
+    console.error(`[AudioStream Error - ${user.username}]:`, error.message);
   });
 
-  opusStream.pipe(decoder).pipe(outputStream);
+  opusStream.on('data', (chunk: Buffer) => {
+    udpMonitor.createMonitoredPacket(chunk);
+    if (udpMonitor.getStatistics().totalPackets % 500 === 0) udpMonitor.logStats();
+  });
+
+  pipeline(
+    opusStream, 
+    decoder, 
+    silencePadder, 
+    outputStream
+  ).catch((err) => {
+    if (err.code === 'ERR_STREAM_PREMATURE_CLOSE') {
+      console.log(`Recording successfully stopped for ${user.username}`);
+      return;
+    }
+    console.error(`Pipeline crashed for ${user.username}:`, err);
+  })
 
   const rec: Recording = {
     opusStream,
     filePath,
     user,
-    timestamp: datenow,
+    timestamp: startIso,
+    latency: 0,
+    filePrefix: filePrefix
   };
 
   if (!recordings.has(guildId)) {
@@ -139,13 +147,24 @@ async function execute(interaction: ChatInputCommandInteraction) {
   //TODO: add error checking to see if user is in the voice channel, otherwise output an error and skip the user
   await interaction.reply(`Recording users: \n${users.map(u => `<@${u.id}>`).join(',\n')}`)
 
-  const receiver = getVoiceConnection(interaction.guildId)!.receiver
+  const connection = getVoiceConnection(interaction.guildId)!;
+  const receiver = connection.receiver
+
+  const commandStartTime = interaction.createdTimestamp;
+  const startIso = new Date(commandStartTime).toISOString();
+  const filePrefix = Date.now().toString();
 
   // for each user, create a listening stream
-  const datenow = Date.now()// required to make all recordings have same UNIX time
   for (const user of users) {
     console.log(`Listening to ${user.username}`)
-    createListeningStream(receiver, user, interaction.guildId, interaction.guild.members.me.voice.channel.id, datenow.toString());
+    createListeningStream(
+      receiver, 
+      user, 
+      interaction.guildId, 
+      interaction.guild.members.me.voice.channel.id, filePrefix,
+      commandStartTime,
+      startIso,
+    );
   }
 }
 

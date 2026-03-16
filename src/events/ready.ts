@@ -10,8 +10,22 @@ async function execute(client: Client) {
   console.log(`Found ${guild.name}`)
   const channel = client.channels.cache.get(process.env.CHANNEL_ID!)
   if (channel instanceof TextChannel) {
-    console.log(`Found ${channel.name}`)
-    await channel.send(`Hello, bot is started. Time is ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()} UTC`)
+    const now = new Date();
+    const dateOptions: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    };
+    const timeOptions: Intl.DateTimeFormatOptions = {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    };
+    const utcDate = now.toLocaleDateString('en-US', dateOptions);
+    const utcTime = now.toLocaleTimeString('en-US', timeOptions);
+    console.log(`Found ${channel.name}`);
+    await channel.send(`Hello, bot has started. Time is ${utcDate} ${utcTime} ${new Date().getTimezoneOffset()}`);
+
   }
 }
 

@@ -23,8 +23,9 @@ async function execute(client: Client) {
     };
     const utcDate = now.toLocaleDateString("en-US", dateOptions);
     const utcTime = now.toLocaleTimeString("en-US", timeOptions);
+    const localTimeZone = now.toLocaleString("en-US", {timeZoneName: "short"});
     console.log(`Found ${channel.name}`);
-    await channel.send(`Hello, bot has started. Time is ${utcDate} ${utcTime} ${new Date().getTimezoneOffset()}`);
+    await channel.send(`Hello, bot has started. Timestamp:  ${utcDate} ${utcTime} ${localTimeZone}`);
   }
 }
 

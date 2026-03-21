@@ -25,7 +25,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const guildRecordings = recordings.get(interaction.guildId);
   if (guildRecordings && guildRecordings.length > 0) {
     await interaction.reply(
-      `❌ Recording in progress in another voice channel! You are not able to use /join at this time.`,
+      `Recording in progress in another voice channel! You are not able to use /join at this time.`,
     );
     return;
   }
@@ -77,9 +77,9 @@ async function execute(interaction: ChatInputCommandInteraction) {
         // disconnect when bot is disconnected by any means
         await cleanUpProcess (
           interaction.guildId!,
-          textChannelId!,
-          voiceChannelId!,
-          client!,
+          textChannelId!, 
+          voiceChannelId!,  // last refactor changed the number of arguments,
+          client!,          // so cleanupProcess didn't execute i guess 
         );
       } catch(e) {
         console.error("Error during cleanup process:", e);

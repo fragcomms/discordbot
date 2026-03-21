@@ -230,18 +230,18 @@ export class RecordingSessionManager {
     // TODO: cleanup
   }
 
-  //recurssive cleanup of all files in local directory (keep subfolders intact)
+  //recursive cleanup of all files in local directory (keep subfolders intact)
   private async cleanupLocalFiles(localDir: string) {
     try {
       const entries = await fs.readdir(localDir, {withFileTypes: true});
       for (const entry of entries) {
         const fullPath = path.join(localDir, entry.name);
-        if (entry.isDirectory()) {
+        if (entry.isDirectory()) { //remove folder and subfolders
           await fs.rm(fullPath, {recursive: true, force:true});
           console.log(`Cleaned up local folder ${fullPath}`);
         }
         else if (entry.isFile()) {
-          await fs.unlink(fullPath);
+          await fs.unlink(fullPath); // remove files
           console.log(`Cleaned up local file ${fullPath}`);
         }
       }

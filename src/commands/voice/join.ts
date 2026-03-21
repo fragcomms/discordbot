@@ -4,6 +4,7 @@ import { getVoiceConnection, joinVoiceChannel, VoiceConnectionStatus } from "@di
 import { ChatInputCommandInteraction, Client, InteractionCallback, SlashCommandBuilder } from "discord.js";
 import { cleanUpProcess } from "../utility/cleanup.js";
 import { recordings } from "../utility/recordings.js";
+import { setGuildState, getGuildState } from "../utility/last-channel-interaction.js";
 // import { sendMessage } from "../utility/messages.js";
 
 const data = new SlashCommandBuilder().setName("join").setDescription(
@@ -42,8 +43,16 @@ async function execute(interaction: ChatInputCommandInteraction) {
     selfMute: true,
   });
 
+  // set guild states, last channels interacted with
+  setGuildState(interaction.guildId, {
+    lastVoiceChannelId: interaction.member.voice.channel.id,
+    lastTextChannelId: interaction.channelId,
+    client: interaction.client
+
+  });
+
   // LISTEN FOR DISCONNECTS
-  connection.on("stateChange", (oldState, newState) => {
+  connection.on("stateChange", async (oldState, newState) => {
     if (
       newState.status === VoiceConnectionStatus.Disconnected
       || newState.status === VoiceConnectionStatus.Destroyed
@@ -52,12 +61,29 @@ async function execute(interaction: ChatInputCommandInteraction) {
         `Disconnect logged from voice channel in guild ${interaction.guildId}`,
       );
 
-      // disconnect when bot is disconnected by any means
-      cleanUpProcess(
-        interaction.guildId!,
-        interaction.channelId!,
-        interaction.client,
-      );
+      // guild states, variables
+      const state = getGuildState(interaction.guildId);
+
+      // variables for cleanup process, taken from GuildState or interaction
+      const textChannelId = state?.lastTextChannelId ?? interaction.channelId;
+      const voiceChannelId = state?.lastVoiceChannelId ?? interaction.member.voice.channel?.id;
+      const client = state?.client ?? interaction.client;
+      
+    
+
+      try {
+       
+      
+        // disconnect when bot is disconnected by any means
+        await cleanUpProcess (
+          interaction.guildId!,
+          textChannelId!,
+          voiceChannelId!,
+          client!,
+        );
+      } catch(e) {
+        console.error("Error during cleanup process:", e);
+      }
     }
   });
 

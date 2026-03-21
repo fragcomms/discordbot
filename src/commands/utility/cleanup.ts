@@ -10,6 +10,9 @@ import { convertMultiplePcmToMka } from "./audio-conversion.js";
 import { sendMessage } from "./messages.js";
 import { Recording, recordings } from "./recordings.js";
 dotenv.config();
+import fs from "fs/promises";
+import { stringify } from "node:querystring";
+
 
 /**
  * decided to refactor the code - aaron
@@ -218,12 +221,36 @@ export class RecordingSessionManager {
 
     if (uploadSuccess) {
       await this.saveToDatabase(guildRecordings, remoteFullPath, timestampIso, networkPing);
+      await this.cleanupLocalFiles(localDir); // cleanup local files
     } else {
       sendMessage(client, channelId, "Audio processing finished, but upload to storage server failed.");
     }
 
     recordings.delete(guildId);
     // TODO: cleanup
+  }
+
+  //recurssive cleanup of all files in local directory (keep subfolders intact)
+  private async cleanupLocalFiles(localDir: string) {
+    try {
+      const entries = await fs.readdir(localDir, {withFileTypes: true});
+      for (const entry of entries) {
+        const fullPath = path.join(localDir, entry.name);
+        if (entry.isDirectory()) {
+          await fs.rm(fullPath, {recursive: true, force:true});
+          console.log(`Cleaned up local folder ${fullPath}`);
+        }
+        else if (entry.isFile()) {
+          await fs.unlink(fullPath);
+          console.log(`Cleaned up local file ${fullPath}`);
+        }
+      }
+      console.log(`Finished cleanup of all files and subfolders for ${localDir}`);
+    }
+    catch(e) {
+      console.error("Failed to clean up local files:", e);
+    }
+    
   }
 }
 
@@ -245,3 +272,7 @@ export async function cleanUpProcess(
 3. SEND MESSAGE
 
 */
+
+
+
+

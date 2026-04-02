@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { ChatInputCommandInteraction, Events, MessageFlags } from "discord.js";
 import { lastChannelInteraction } from "../commands/utility/last-channel-interaction.js";
 import { ExtendedClient } from "../types/ExtendedClient.js";
+import { logger } from "../utils/logger.js"
 
 const name = Events.InteractionCreate;
 async function execute(interaction: ChatInputCommandInteraction) {
@@ -13,7 +15,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   try {
-    // console.log(interaction)
+    // logger.info(interaction)
     await command.execute(interaction);
     // store guild & channel in map
     const channelId = interaction.channelId;
@@ -21,9 +23,9 @@ async function execute(interaction: ChatInputCommandInteraction) {
     lastChannelInteraction.set(guildId!, channelId); // store
 
     // log to track channel id for disconnects
-    console.log(`Command used.`);
-    console.log(`Guild - ${lastChannelInteraction.keys().next().value}`);
-    console.log(`Channel - ${lastChannelInteraction.get(guildId!)}`);
+    logger.info(`Command used.`);
+    logger.info(`Guild - ${lastChannelInteraction.keys().next().value}`);
+    logger.info(`Channel - ${lastChannelInteraction.get(guildId!)}`);
   } catch (error) {
     console.error(error);
     if (interaction.replied || interaction.deferred) {

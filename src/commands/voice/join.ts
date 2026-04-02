@@ -5,6 +5,7 @@ import { ChatInputCommandInteraction, GuildMember, SlashCommandBuilder } from "d
 import { cleanUpProcess } from "../utility/cleanup.js";
 import { recordings } from "../utility/recordings.js";
 import { setGuildState, getGuildState } from "../utility/last-channel-interaction.js";
+import { logger } from "../../utils/logger.js"
 // import { sendMessage } from "../utility/messages.js";
 
 const data = new SlashCommandBuilder().setName("join").setDescription(
@@ -26,7 +27,7 @@ async function handleConnectionStateChange(
   // permissions (never, the bot always has administrator privileges) or the bot's connection
   // is destroyed intentionally. if it is destroyed unintentionally (i.e. critical crash), then we
   // should treat it as if it was destroyed intentionally.
-  console.log("VC state: ", oldState.status, "=>", newState.status);
+  logger.info(`VC state: ${oldState.status} => ${newState.status}`);
 
   // if the voice connection was disconnected "weirdly", try reconnecting again
   // if the voice connection was "kicked" then the attempt to reconnect should fail
@@ -77,7 +78,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   // remove the connection and connect to the new voice channel
   const prevConn = getVoiceConnection(guildId);
   if (prevConn) {
-    console.log(`Destroying ${voiceObj.channelId}`);
+    logger.info(`Destroying ${voiceObj.channelId}`);
     prevConn.destroy();
   }
 
@@ -101,7 +102,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
     handleConnectionStateChange(oldState, newState, conn, interaction);
   });
 
-  console.log(`joined ${voiceObj.channel.name}, id: ${voiceObj.channelId}`);
+  logger.info(`joined ${voiceObj.channel.name}, id: ${voiceObj.channelId}`);
   await interaction.reply(`Joined ${voiceObj.channel.name}`);
 }
 

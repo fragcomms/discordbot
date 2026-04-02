@@ -1,9 +1,11 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Client, Events, Guild, InteractionCallback, VoiceState } from "discord.js";
 import {  cleanUpProcess } from "../commands/utility/cleanup.js";
 import { getGuildState, setGuildState } from "../commands/utility/last-channel-interaction.js";
 import { sendMessage } from "../commands/utility/messages.js";
 import {Recording, recordings} from "../commands/utility/recordings.js"
 import { getVoiceConnection} from "@discordjs/voice";
+import { logger } from "../utils/logger.js"
 
 const name = Events.VoiceStateUpdate;
 async function execute(oldState: VoiceState, newState: VoiceState, client: Client) {

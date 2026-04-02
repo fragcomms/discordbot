@@ -26,6 +26,7 @@ import { UDPIntegrityMonitor } from "../../monitor/upd_integrity_monitor.js";
 // import { Transform, TransformCallback } from 'node:stream';
 import { pipeline } from "node:stream/promises";
 import { PCMSilencePadder } from "../utility/pcm-padder.js";
+import { logger } from "../../utils/logger.js"
 
 const ffmpegPath = ffmpeg as unknown as string;
 
@@ -117,7 +118,7 @@ async function createListeningStream(
     outputStream,
   ).catch((err) => {
     if (err.code === "ERR_STREAM_PREMATURE_CLOSE") {
-      console.log(`Recording successfully stopped for ${user.username}`);
+      logger.info(`Recording successfully stopped for ${user.username}`);
       return;
     }
     console.error(`Pipeline crashed for ${user.username}:`, err);
@@ -189,7 +190,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   // for each user, create a listening stream
   for (const user of users) {
-    console.log(`Listening to ${user.username}`);
+    logger.info(`Listening to ${user.username}`);
     createListeningStream(
       receiver,
       user,

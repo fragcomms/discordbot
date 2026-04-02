@@ -12,6 +12,7 @@ import { Recording, recordings } from "./recordings.js";
 dotenv.config();
 import fs from "fs/promises";
 import { stringify } from "node:querystring";
+import { logger } from "../../utils/logger.js";
 
 
 /**
@@ -36,19 +37,19 @@ class SCPManager {
       const scp = await SCPClient(this.config);
       const remotePath = `${remoteDir}/${remoteFileName}`;
       if (!(await scp.exists(remoteDir))) {
-        console.log(`Creating remote directory: ${remoteDir}`);
+        logger.info(`Creating remote directory: ${remoteDir}`);
         await scp.mkdir(remoteDir, undefined, { recursive: true });
         // recursive mkdir required because of new server ids
       }
 
-      console.log(`Uploading ${localPath} to ${remotePath}...`);
+      logger.info(`Uploading ${localPath} to ${remotePath}...`);
       await scp.uploadFile(localPath, remotePath);
-      console.log("Upload successful");
+      logger.info("Upload successful");
       scp.close();
 
       return true;
     } catch (e) {
-      console.error("Transfer failed:", e);
+      logger.error("Transfer failed:", e);
       return false;
     }
   }
@@ -80,7 +81,7 @@ class PGManager {
 
   public async shutdown(): Promise<void> {
     await this.pool.end();
-    console.log("Database pool shut down");
+    logger.info("Database pool shut down");
   }
 
   // returns newId or null, null to show it failed
@@ -100,10 +101,10 @@ class PGManager {
       const res = await this.pool.query(query, values);
 
       const newId = res.rows[0]?.audio_id;
-      console.log(`Inserted Audio Record. ID: ${newId}`);
+      logger.info(`Inserted Audio Record. ID: ${newId}`);
       return newId;
     } catch (e) {
-      console.log("Failed to insert audio record:", e);
+      logger.warn("Failed to insert audio record:", e);
       return null;
     }
   }
@@ -193,13 +194,13 @@ export class RecordingSessionManager {
     const guildRecordings = recordings.get(guildId);
 
     if (!guildRecordings || guildRecordings.length === 0) {
-      console.log(`No recordings in progress`);
+      logger.info(`No recordings in progress`);
       return;
     }
 
     const connection = getVoiceConnection(guildId);
     const networkPing = connection?.ping.ws ?? client.ws.ping;
-    console.log(`[Network] Final Voice Ping for session: ${networkPing}ms`);
+    logger.info(`[Network] Final Voice Ping for session: ${networkPing}ms`);
 
     this.stopActiveStreams(guildRecordings, client, channelId);
 
@@ -238,14 +239,14 @@ export class RecordingSessionManager {
         const fullPath = path.join(localDir, entry.name);
         if (entry.isDirectory()) { //remove folder and subfolders
           await fs.rm(fullPath, {recursive: true, force:true});
-          console.log(`Cleaned up local folder ${fullPath}`);
+          logger.info(`Cleaned up local folder ${fullPath}`);
         }
         else if (entry.isFile()) {
           await fs.unlink(fullPath); // remove files
-          console.log(`Cleaned up local file ${fullPath}`);
+          logger.info(`Cleaned up local file ${fullPath}`);
         }
       }
-      console.log(`Finished cleanup of all files and subfolders for ${localDir}`);
+      logger.info(`Finished cleanup of all files and subfolders for ${localDir}`);
     }
     catch(e) {
       console.error("Failed to clean up local files:", e);

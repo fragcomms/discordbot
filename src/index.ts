@@ -16,6 +16,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 //import { cleanOldDataFiles } from "./commands/utility/cleanup.js";
 import { ExtendedClient } from "./types/ExtendedClient.js";
+import { logger } from "./utils/logger.js";
 
 const client = new ExtendedClient();
 const __filename = fileURLToPath(import.meta.url);
@@ -36,7 +37,7 @@ for (const folder of commandFolders) {
     if ("data" in command && "execute" in command) {
       client.commands.set(command.data.name, command);
     } else {
-      console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+      logger.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
     }
   }
 }
@@ -47,7 +48,7 @@ const eventFiles = fs.readdirSync(eventsPath); // list of things inside 'events'
 for (const file of eventFiles) {
   const filePath = path.join(eventsPath, file);
   const event = await import(filePath);
-  console.log(`Loading event: ${event.name} from ${file}`);
+  logger.info(`Loading event: ${event.name} from ${file}`);
   if (event.once) {
     client.once(event.name, (...args) => event.execute(...args));
   } else {

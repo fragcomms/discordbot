@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { getVoiceConnection } from "@discordjs/voice";
 import { ChatInputCommandInteraction, SlashCommandBuilder, VoiceBasedChannel } from "discord.js";
-import { cleanUpDirectory } from "../utility/cleanup.js";
+// import { cleanUpDirectory } from "../utility/cleanup.js";
+import { logger } from "../../utils/logger.js"
 
 const data = new SlashCommandBuilder()
   .setName("leave")
@@ -25,7 +26,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   // DONE: stop recording after told to leave handled in /join
 
   connection.destroy();
-  console.log(`Destroying ${channel.id}`);
+  logger.info(`Destroying ${channel.id}`);
   await interaction.reply(`Successfully disconnected from ${channel.name}.`);
 
   // testing data file cleanup

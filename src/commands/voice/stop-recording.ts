@@ -2,6 +2,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import { cleanUpProcess } from "../utility/cleanup.js";
 import { recordings } from "../utility/recordings.js";
+import { logger } from "../../utils/logger.js"
 
 const data = new SlashCommandBuilder()
   .setName("stop-recording")

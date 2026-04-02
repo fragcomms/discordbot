@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { logger } from "../utils/logger.js"
 
 interface PacketInfo {
   sequenceNum: number;
@@ -20,7 +21,7 @@ export class UDPIntegrityMonitor {
 
   private log(msg: string, level: "INFO" | "WARN" | "ERROR" = "INFO") {
     const ts = new Date().toISOString();
-    console.log(`[${ts}] [${level}] ${msg}`);
+    logger.info(`[${ts}] [${level}] ${msg}`);
   }
 
   private calculateChecksum(data: Buffer): string {

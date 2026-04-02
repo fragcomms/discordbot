@@ -1,13 +1,14 @@
 import { generateDependencyReport } from "@discordjs/voice";
 import { Client, Events, TextChannel } from "discord.js";
+import { logger } from "../utils/logger.js"
 
 const name = Events.ClientReady;
 const once = true;
 async function execute(client: Client) {
-  console.log(`Ready! Logged in as ${client.user?.tag}`);
-  console.log(generateDependencyReport());
+  logger.info(`Ready! Logged in as ${client.user?.tag}`);
+  logger.info(generateDependencyReport());
   const guild = await client.guilds.fetch(process.env.GUILD_ID!);
-  console.log(`Found ${guild.name}`);
+  logger.info(`Found ${guild.name}`);
   const channel = client.channels.cache.get(process.env.CHANNEL_ID!);
   if (channel instanceof TextChannel) {
     const now = new Date();
@@ -24,7 +25,7 @@ async function execute(client: Client) {
     const utcDate = now.toLocaleDateString("en-US", dateOptions);
     const utcTime = now.toLocaleTimeString("en-US", timeOptions);
     const localTimeZone = now.toLocaleString("en-US", {timeZoneName: "short"});
-    console.log(`Found ${channel.name}`);
+    logger.info(`Found ${channel.name}`);
     await channel.send(`Hello, bot has started. Timestamp:  ${utcDate} ${utcTime} ${localTimeZone}`);
   }
 }

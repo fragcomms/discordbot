@@ -3,6 +3,7 @@
 import { AudioReceiveStream } from "@discordjs/voice";
 import { User } from "discord.js";
 import ffmpeg from "ffmpeg-static";
+import { logger } from "../../utils/logger.js";
 // import { OpusStream } from 'prism-media/typings/opus.js'
 
 export interface Recording {
@@ -15,16 +16,15 @@ export interface Recording {
 }
 
 export function logRecordings() {
-  console.log("\n📜 Current recordings state:");
+  logger.info("\nCurrent recordings state:");
   for (const [channelId, recs] of recordings.entries()) {
-    console.log(`  Channel ${channelId}:`);
+    logger.info(`Channel ${channelId}:`);
     for (const rec of recs) {
-      console.log(
-        `    - ${rec.user.username} → ${rec.filePath} [stream active: ${!rec.opusStream.destroyed}]`,
+      logger.info(
+        `- ${rec.user.username} → ${rec.filePath} [stream active: ${!rec.opusStream.destroyed}]`,
       );
     }
   }
-  console.log("──────────────────────────────\n");
 }
 
 // // stop all recordings (in case bot disconnects/crashes)

@@ -5,6 +5,7 @@ import { User } from "discord.js";
 import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
 import path from "path";
+import { logger } from "../../utils/logger.js";
 
 // exportable function pcm -> wav
 export async function convertPcmToWav(user: User, filePath: string): Promise<string> {
@@ -19,7 +20,7 @@ export async function convertPcmToWav(user: User, filePath: string): Promise<str
         return;
       }
 
-      console.log(`Converted ${user}'s audio file to ${wavPath}`);
+      logger.info(`Converted ${user}'s audio file to ${wavPath}`);
       resolve(wavPath); // return the path of the wav file
     });
   });

@@ -7,8 +7,8 @@ import { getVoiceConnection} from "@discordjs/voice";
 
 const name = Events.VoiceStateUpdate;
 async function execute(oldState: VoiceState, newState: VoiceState, client: Client) {
-
-  
+  const botChannelId = oldState.guild.members.me?.voice.channelId;
+  if (oldState.channel?.id !== botChannelId) return;
 
   // get guild id
   const guild = oldState.guild;
@@ -31,7 +31,7 @@ async function execute(oldState: VoiceState, newState: VoiceState, client: Clien
 
     const vcMembers = oldState.channel.members.filter(member => !member.user.bot); // all human members in vc
     const theBot = oldState.channel.members.filter(member => member.user.bot) // the bot's status in the vc
-    const theBotIsAlone = (vcMembers.size > 0 && theBot.size === 1);
+    const theBotIsAlone = (vcMembers.size === 0 && theBot.size === 1); // true if the there is zero members in the voice channel and the bot is the only person there
     const connection = getVoiceConnection(guildId);
 
     if (!oldState.channel) return; 

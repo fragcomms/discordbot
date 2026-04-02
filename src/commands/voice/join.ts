@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // TODO: clean imports after finish
-import { getVoiceConnection, joinVoiceChannel, VoiceConnectionStatus } from "@discordjs/voice";
+import { entersState, getVoiceConnection, joinVoiceChannel, VoiceConnectionStatus } from "@discordjs/voice";
 import { ChatInputCommandInteraction, Client, InteractionCallback, SlashCommandBuilder } from "discord.js";
 import { cleanUpProcess } from "../utility/cleanup.js";
 import { recordings } from "../utility/recordings.js";
@@ -51,39 +51,42 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   });
 
-  // LISTEN FOR DISCONNECTS
+  // LISTEN FOR DISCONNECTED/DESTROYED CONNECTIONS
   connection.on("stateChange", async (oldState, newState) => {
-    if (
-      newState.status === VoiceConnectionStatus.Disconnected
-      || newState.status === VoiceConnectionStatus.Destroyed
-    ) {
-      console.log(
-        `Disconnect logged from voice channel in guild ${interaction.guildId}`,
-      );
+    // the issue with listening for "disconnected" states is that sometimes discord moves
+    // the bot to one of their other servers, resulting in a "disconnected" state but 
+    // is actually rerouting the connection to a different place.
 
-      // guild states, variables
-      const state = getGuildState(interaction.guildId);
+    // instead of destroying the connection for every single time the discord servers migrate us,
+    // we keep trying until it is measured impossible to join the voice channel due to lack of
+    // permissions (never, the bot always has administrator privileges) or the bot's connection
+    // is destroyed intentionally. if it is destroyed unintentionally (i.e. critical crash), then we
+    // should treat it as if it was destroyed intentionally.
+    console.log("VC state:", oldState.status, "=>", newState.status);
 
-      // variables for cleanup process, taken from GuildState or interaction
-      const textChannelId = state?.lastTextChannelId ?? interaction.channelId;
-      const voiceChannelId = state?.lastVoiceChannelId ?? interaction.member.voice.channel?.id;
-      const client = state?.client ?? interaction.client;
-      
-    
-
+    if (newState.status === VoiceConnectionStatus.Disconnected) {
       try {
-       
-      
-        // disconnect when bot is disconnected by any means
-        await cleanUpProcess (
-          interaction.guildId!,
-          textChannelId!, 
-          voiceChannelId!,  // last refactor changed the number of arguments,
-          client!,          // so cleanupProcess didn't execute i guess 
-        );
-      } catch(e) {
-        console.error("Error during cleanup process:", e);
+        await entersState(connection, VoiceConnectionStatus.Connecting, 5_000);
+        return; // transient reconnect path: keep session
+      } catch {
+        connection.destroy(); // permanent fail after retry
       }
+    }
+
+    const state = getGuildState(interaction.guildId);
+
+    const textChannelId = state?.lastTextChannelId ?? interaction.channelId;
+    const voiceChannelId = state?.lastVoiceChannelId ?? interaction.member.voice.channel?.id;
+    const client = state?.client ?? interaction.client;
+
+    if (newState.status === VoiceConnectionStatus.Destroyed) {
+      // final cleanup
+      await cleanUpProcess(
+        interaction.guildId!,
+        textChannelId!,
+        voiceChannelId!,  // last refactor changed the number of arguments,
+        client!,          // so cleanupProcess didn't execute i guess 
+      );
     }
   });
 

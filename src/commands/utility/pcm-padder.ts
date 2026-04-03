@@ -1,11 +1,12 @@
 import { Transform, TransformCallback } from "node:stream";
 
 export class PCMSilencePadder extends Transform {
-  private lastPacketTime = 0;
   private commandStartTime: number;
-  private isFirstPacket = true;
+  private framesProcessed = 0;
+  
   // 48kHz, 2-channel, 16-bit, 20ms = 3840 bytes per frame
   private readonly BYTES_PER_FRAME = 3840;
+  private readonly FRAME_DURATION_MS = 20;
 
   constructor(commandStartTime: number) {
     super();
@@ -14,32 +15,29 @@ export class PCMSilencePadder extends Transform {
 
   _transform(chunk: Buffer, encoding: string, callback: TransformCallback) {
     const now = Date.now();
+    const elapsedMs = now - this.commandStartTime;
 
-    // Initial Silence Padding
-    if (this.isFirstPacket) {
-      const initialDelayMs = now - this.commandStartTime;
-      const missingInitialFrames = Math.floor(initialDelayMs / 20);
+    // Based on total time elapsed, how many frames SHOULD we have processed?
+    const expectedFrames = Math.floor(elapsedMs / this.FRAME_DURATION_MS);
 
-      if (missingInitialFrames > 0) {
-        this.push(Buffer.alloc(missingInitialFrames * this.BYTES_PER_FRAME, 0));
-      }
-
-      this.isFirstPacket = false;
-      this.lastPacketTime = now;
-      this.push(chunk);
-      return callback();
-    }
-
-    // Mid-Stream Silence Padding
-    const delta = now - this.lastPacketTime;
-    const missingFrames = Math.floor(delta / 20) - 1;
+    // Are we behind the timeline?
+    const missingFrames = expectedFrames - this.framesProcessed;
 
     if (missingFrames > 0) {
+      // Pad only the exact number of frames we are missing overall
       this.push(Buffer.alloc(missingFrames * this.BYTES_PER_FRAME, 0));
+      this.framesProcessed += missingFrames;
     }
 
-    this.lastPacketTime = now;
+    // Push the actual received chunk
     this.push(chunk);
+
+    // Update our processed frame counter based on the actual chunk size.
+    // Using chunk.length ensures accuracy even if a chunk arrives 
+    // smaller or larger than exactly 3840 bytes.
+    const framesInChunk = chunk.length / this.BYTES_PER_FRAME;
+    this.framesProcessed += framesInChunk;
+
     callback();
   }
 }

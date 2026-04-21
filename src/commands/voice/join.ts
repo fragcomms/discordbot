@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // TODO: clean imports after finish
 import { entersState, getVoiceConnection, joinVoiceChannel, VoiceConnectionState, VoiceConnection, VoiceConnectionStatus } from "@discordjs/voice";
-import { ChatInputCommandInteraction, GuildMember, SlashCommandBuilder } from "discord.js";
+import { ChatInputCommandInteraction, GuildMember, SlashCommandBuilder, MessageFlags } from "discord.js";
 import { cleanUpProcess } from "../utility/cleanup.js";
 import { recordings } from "../utility/recordings.js";
 import { setGuildState, getGuildState } from "../utility/last-channel-interaction.js";
 import { logger } from "../../utils/logger.js"
-// import { sendMessage } from "../utility/messages.js";
+import { buildEmbed } from "../utility/messages.js";
+
 
 const data = new SlashCommandBuilder().setName("join").setDescription(
   "Allows the bot to join the same channel as the user.",
@@ -56,7 +57,10 @@ async function handleConnectionStateChange(
 async function execute(interaction: ChatInputCommandInteraction) {
   // if user tries to use the command in a DM (how)
   if (!interaction.inCachedGuild()) {
-    await interaction.reply("Use this bot in discord servers only!");
+    await interaction.reply({ 
+      embeds: [buildEmbed("Use this bot in discord servers only!", 0xFF0000)],
+      flags: MessageFlags.Ephemeral
+    });
     return;
   }
 
@@ -65,13 +69,19 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   // if user is not in a voice channel
   if (!voiceObj.channel) {
-    await interaction.reply("Join a voice channel and try again!");
+    await interaction.reply({ 
+      embeds: [buildEmbed("Join a voice channel and try again!", 0xFF0000)],
+      flags: MessageFlags.Ephemeral
+    });
     return;
   }
 
   // if there is a different recording going on in the same server
   if (recordings.get(guildId)?.length) {
-    return interaction.reply("Recording in progress in another voice channel! You are not able to use /join at this time.");
+    return interaction.reply({ 
+      embeds: [buildEmbed("Recording in progress in another voice channel! You are not able to use /join at this time.", 0xFF0000)],
+      flags: MessageFlags.Ephemeral
+    });
   }
 
   // if a previous connection exists BUT there is nothing being recorded,
@@ -103,7 +113,9 @@ async function execute(interaction: ChatInputCommandInteraction) {
   });
 
   logger.info(`joined ${voiceObj.channel.name}, id: ${voiceObj.channelId}`);
-  await interaction.reply(`Joined ${voiceObj.channel.name}`);
+  await interaction.reply({ 
+    embeds: [buildEmbed(`Joined ${voiceObj.channel.name}`, 0x3399FF)] 
+  });
 }
 
 export { data, execute };

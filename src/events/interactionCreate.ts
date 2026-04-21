@@ -2,6 +2,7 @@
 import { ChatInputCommandInteraction, Events, MessageFlags } from "discord.js";
 import { lastChannelInteraction } from "../commands/utility/last-channel-interaction.js";
 import { ExtendedClient } from "../types/ExtendedClient.js";
+import { buildEmbed } from "../commands/utility/messages.js";
 import { logger } from "../utils/logger.js"
 
 const name = Events.InteractionCreate;
@@ -30,12 +31,12 @@ async function execute(interaction: ChatInputCommandInteraction) {
     console.error(error);
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp({
-        content: "There was an error while executing this command!",
+        embeds: [buildEmbed("There was an error while executing this command!", 0xFF0000)],
         flags: MessageFlags.Ephemeral,
       });
     } else {
       await interaction.reply({
-        content: "There was an error while executing this command!",
+        embeds: [buildEmbed("There was an error while executing this command!", 0xFF0000)],
         flags: MessageFlags.Ephemeral,
       });
     }

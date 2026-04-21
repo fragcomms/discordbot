@@ -1,6 +1,7 @@
 import { generateDependencyReport } from "@discordjs/voice";
 import { Client, Events, TextChannel } from "discord.js";
 import { logger } from "../utils/logger.js"
+import { buildEmbed } from "../commands/utility/messages.js";
 
 const name = Events.ClientReady;
 const once = true;
@@ -26,7 +27,12 @@ async function execute(client: Client) {
     const utcTime = now.toLocaleTimeString("en-US", timeOptions);
     const localTimeZone = now.toLocaleString("en-US", {timeZoneName: "short"});
     logger.info(`Found ${channel.name}`);
-    await channel.send(`Hello, bot has started. Timestamp:  ${utcDate} ${utcTime} ${localTimeZone}`);
+
+
+    const readyMsg = `Hello! \n\nThe FragComms bot is now online. \nTimestamp: ${localTimeZone}`
+    const embed = buildEmbed(readyMsg, 0x90EE90 );
+    
+    await channel.send({ embeds: [embed] });
   }
 }
 

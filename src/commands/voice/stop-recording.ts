@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
+import { ChatInputCommandInteraction, MessageFlags, SlashCommandBuilder } from "discord.js";
 import { cleanUpProcess } from "../utility/cleanup.js";
 import { recordings } from "../utility/recordings.js";
 import { logger } from "../../utils/logger.js"
+import { buildEmbed } from "../utility/messages.js";
 
 const data = new SlashCommandBuilder()
   .setName("stop-recording")
@@ -10,7 +11,10 @@ const data = new SlashCommandBuilder()
 
 async function execute(interaction: ChatInputCommandInteraction) {
   if (!interaction.inCachedGuild()) {
-    await interaction.reply("This is a server-only command.");
+    await interaction.reply({ 
+      embeds: [buildEmbed("This is a server-only command.", 0xFF0000)],
+      flags: MessageFlags.Ephemeral
+    });
     return;
   }
 
@@ -19,18 +23,26 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   // TODO: check if user is in a channel that is currently recording
   if (!interaction.member.voice.channel) {
-    await interaction.reply("Join the specific voice channel to stop recording!");
+    await interaction.reply({ 
+      embeds: [buildEmbed("Join the specific voice channel to stop recording!", 0xFF0000)],
+      flags: MessageFlags.Ephemeral
+    });
     return;
   }
   const channelId = interaction.channelId;
   const client = interaction.client;
 
   if (!guildRecordings || guildRecordings.length == 0) {
-    await interaction.reply("Not currently recording.");
+    await interaction.reply({ 
+      embeds: [buildEmbed("Not currently recording.", 0xFF0000)],
+      flags: MessageFlags.Ephemeral
+    });
     return;
   }
 
-  await interaction.reply("Stopping recording, processing files...");
+  await interaction.reply({ 
+    embeds: [buildEmbed("Stopping recording, processing files...", 0xFACC15)] 
+  }); //
 
   // STOP AND PROCESS ALL ACTIVE RECORDINGS
   cleanUpProcess(guildId, channelId, interaction.guild.members.me!.voice.channel!.id, client);

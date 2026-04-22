@@ -159,9 +159,13 @@ export class RecordingSessionManager {
   private stopActiveStreams(guildRecordings: Recording[], client: DiscordClient, channelId: string) {
     for (const recording of guildRecordings) {
       try {
-        recording.opusStream.destroy();
+        // destroy all streams and decoders
+        if (recording.outputStream) recording.outputStream.destroy();
+        if (recording.decoder) recording.decoder.destroy();
+        if (recording.opusStream) recording.opusStream.destroy();
+        logger.info(`[Cleanup] Successfully destroyed streams for ${recording.user.username}`);
       } catch (error) {
-        console.error(error);
+        console.error(`[Cleanup] Error destroying streams for ${recording.user.username}:`, error);
         sendMessage(client, channelId, `Could not stop recording for ${recording.user.username}:`);
       }
     }
@@ -203,6 +207,8 @@ export class RecordingSessionManager {
     logger.info(`[Network] Final Voice Ping for session: ${networkPing}ms`);
 
     this.stopActiveStreams(guildRecordings, client, channelId);
+    recordings.delete(guildId);
+    await new Promise(resolve => setTimeout(resolve, 250));
 
     // vars to help make it plug and play
     const timestampIso = guildRecordings[0].timestamp;
@@ -226,9 +232,6 @@ export class RecordingSessionManager {
     } else {
       sendMessage(client, channelId, "Audio processing finished, but upload to storage server failed.");
     }
-
-    recordings.delete(guildId);
-    // TODO: cleanup
   }
 
   //recursive cleanup of all files in local directory (keep subfolders intact)

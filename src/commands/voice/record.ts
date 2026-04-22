@@ -128,6 +128,8 @@ async function createListeningStream(
 
   const rec: Recording = {
     opusStream,
+    decoder,
+    outputStream,
     filePath,
     user,
     timestamp: startIso,

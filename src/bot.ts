@@ -1,0 +1,67 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import "dotenv/config";
+import {
+  ChatInputCommandInteraction,
+  Client,
+  ClientUser,
+  Collection,
+  Events,
+  GatewayIntentBits,
+  GuildChannelManager,
+  MessageFlags,
+  TextChannel,
+} from "discord.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+//import { cleanOldDataFiles } from "./commands/utility/cleanup.js";
+import { ExtendedClient } from "./types/ExtendedClient.js";
+import { logger } from "./utils/logger.js";
+
+const client = new ExtendedClient();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+client.commands = new Collection();
+
+const foldersPath = path.join(__dirname, "commands");
+const commandFolders = fs.readdirSync(foldersPath);
+
+// run for all folders to check if commands are correct - aaron
+for (const folder of commandFolders) {
+  const commandsPath = path.join(foldersPath, folder);
+  const commandFiles = fs.readdirSync(commandsPath).filter((file) => /\.(js|ts)$/.test(file));
+  for (const file of commandFiles) {
+    const filePath = path.join(commandsPath, file);
+    const command = await import(filePath);
+    if ("data" in command && "execute" in command) {
+      client.commands.set(command.data.name, command);
+    } else {
+      logger.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+    }
+  }
+}
+
+// events decentralization (every event can be coded independently in events folder) - aaron
+const eventsPath = path.join(__dirname, "events");
+const eventFiles = fs.readdirSync(eventsPath); // list of things inside 'events' directory
+for (const file of eventFiles) {
+  const filePath = path.join(eventsPath, file);
+  const event = await import(filePath);
+  logger.info(`Loading event: ${event.name} from ${file}`);
+  if (event.once) {
+    client.once(event.name, (...args) => event.execute(...args));
+  } else {
+    client.on(event.name, (...args) => event.execute(...args));
+  }
+}
+
+// CLEAN OLD DATA FILES EVERY 48 HOURS
+// can be implemented later
+// setInterval(() => {
+//   cleanOldDataFiles("data", ".pcm");
+//   cleanOldDataFiles("data", ".mka");
+//   cleanOldDataFiles("data", ".wav");
+// }, 1000 * 60 * 60 * 48);
+
+client.login(process.env.DISCORD_TOKEN);

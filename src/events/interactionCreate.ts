@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 import { ChatInputCommandInteraction, Events, MessageFlags } from "discord.js";
 import { lastChannelInteraction } from "../commands/utility/last-channel-interaction.js";
 import { buildEmbed } from "../commands/utility/messages.js";

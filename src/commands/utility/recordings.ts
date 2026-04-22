@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 // NOT A SLASH COMMAND, IT HOLDS THE recording object that /record and /stop-recording use
 import { AudioReceiveStream } from "@discordjs/voice";
 import { User } from "discord.js";

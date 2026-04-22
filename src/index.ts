@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isTs = __filename.endsWith(".ts");
 
-const manager = new ShardingManager(path.join(__dirname, "bot.ts"), {
+const manager = new ShardingManager(path.join(__dirname, isTs ? "bot.ts" : "bot.js"), {
   token: process.env.DISCORD_TOKEN,
   totalShards: "auto", // Automatically scales based on the number of servers the bot is in
   // might change later

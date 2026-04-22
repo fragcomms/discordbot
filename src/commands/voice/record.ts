@@ -23,7 +23,7 @@ import { logRecordings, Recording, recordings } from "../utility/recordings.js";
 import ffmpeg from "ffmpeg-static";
 // import { OpusStream } from 'prism-media/typings/opus.js';
 // import { Channel, channel } from 'node:diagnostics_channel';
-import { UDPIntegrityMonitor } from "../../monitor/upd_integrity_monitor.js";
+// import { UDPIntegrityMonitor } from "../../monitor/upd_integrity_monitor.js";
 // import { Transform, TransformCallback } from 'node:stream';
 import { pipeline } from "node:stream/promises";
 import { PCMSilencePadder } from "../utility/pcm-padder.js";
@@ -70,7 +70,7 @@ const data = new SlashCommandBuilder()
       .setDescription("User to be recorded")
   );
 
-const udpMonitors = new Map<string, UDPIntegrityMonitor>();
+// const udpMonitors = new Map<string, UDPIntegrityMonitor>();
 
 // REQUIRED: FFmpeg installed on machine!!!!!!!!
 async function createListeningStream(
@@ -83,8 +83,8 @@ async function createListeningStream(
   startIso: string,
 ) {
   // Initialize monitor for this user
-  const udpMonitor = new UDPIntegrityMonitor();
-  udpMonitors.set(user.id, udpMonitor);
+  // const udpMonitor = new UDPIntegrityMonitor();
+  // udpMonitors.set(user.id, udpMonitor);
 
   const opusStream = receiver.subscribe(user.id, {
     end: { behavior: EndBehaviorType.Manual },
@@ -108,10 +108,10 @@ async function createListeningStream(
     console.error(`[AudioStream Error - ${user.username}]:`, error.message);
   });
 
-  opusStream.on("data", (chunk: Buffer) => {
-    udpMonitor.createMonitoredPacket(chunk);
-    if (udpMonitor.getStatistics().totalPackets % 500 === 0) udpMonitor.logStats();
-  });
+  // opusStream.on("data", (chunk: Buffer) => {
+  //   udpMonitor.createMonitoredPacket(chunk);
+  //   if (udpMonitor.getStatistics().totalPackets % 500 === 0) udpMonitor.logStats();
+  // });
 
   pipeline(
     opusStream,
@@ -201,9 +201,11 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const connection = getVoiceConnection(interaction.guildId)!;
   const receiver = connection.receiver;
 
-  const commandStartTime = interaction.createdTimestamp;
-  const startIso = new Date(commandStartTime).toISOString();
+  const epochStartTime = interaction.createdTimestamp;
+  const startIso = new Date(epochStartTime).toISOString();
   const filePrefix = Date.now().toString();
+
+  const commandStartTime = performance.now();
 
   // for each user, create a listening stream
   for (const user of users) {

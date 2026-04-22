@@ -78,22 +78,14 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: numbe
     ffmpegArgs.push(`-metadata:s:a:${index}`, `title=${path.basename(path.dirname(value))}`);
   }
   ffmpegArgs.push(
-    "-c:a",
-    "libopus",
-    "-b:a",
-    "20k",
-    "-frame_duration",
-    "60",
-    "-compression_level",
-    "10",
-    "-vbr",
-    "on",
-    "-af",
-    "dynaudnorm,highpass=f=200,lowpass=f=3000",
-    "-application",
-    "voip",
-    "-ac",
-    "1",
+    "-c:a", "libopus",
+    "-b:a", "16k",
+    "-frame_duration", "60",
+    "-compression_level", "6",
+    "-vbr", "on",
+    "-af", "afftdn,dynaudnorm,highpass=f=200,lowpass=f=4000",
+    "-application", "voip",
+    "-ac", "1",
     outputPath,
   );
 

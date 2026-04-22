@@ -6,7 +6,7 @@ const data = new SlashCommandBuilder().setName("ping").setDescription("Replies w
 
 async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.reply({
-    embeds: [buildEmbed("Pong!", 0x3399FF)]
+    embeds: [buildEmbed("Pong!", 0x3399FF)],
   });
 }
 

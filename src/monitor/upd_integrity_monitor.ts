@@ -1,5 +1,5 @@
 import * as crypto from "node:crypto";
-import { logger } from "../utils/logger.js"
+import { logger } from "../utils/logger.js";
 
 interface PacketInfo {
   sequenceNum: number;

@@ -14,7 +14,7 @@ import {
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-//import { cleanOldDataFiles } from "./commands/utility/cleanup.js";
+// import { cleanOldDataFiles } from "./commands/utility/cleanup.js";
 import { ExtendedClient } from "./types/ExtendedClient.js";
 import { logger } from "./utils/logger.js";
 

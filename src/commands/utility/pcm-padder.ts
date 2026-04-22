@@ -3,7 +3,7 @@ import { Transform, TransformCallback } from "node:stream";
 export class PCMSilencePadder extends Transform {
   private commandStartTime: number;
   private bytesPushed = 0;
-  
+
   // 48kHz, 2-channel, 16-bit, 20ms = 3840 bytes per frame
   private readonly BYTES_PER_FRAME = 3840;
   private readonly FRAME_DURATION_MS = 20;
@@ -28,17 +28,17 @@ export class PCMSilencePadder extends Transform {
 
     if (missingBytes > 0) {
       const missingFrames = Math.floor(missingBytes / this.BYTES_PER_FRAME);
-      
+
       if (missingFrames > 0) {
         const totalPaddingSize = missingFrames * this.BYTES_PER_FRAME;
         let remainingPadding = totalPaddingSize;
-        
+
         while (remainingPadding > 0) {
           const writeSize = Math.min(remainingPadding, this.SILENCE_TEMPLATE.length);
           this.push(this.SILENCE_TEMPLATE.subarray(0, writeSize));
           remainingPadding -= writeSize;
         }
-        
+
         this.bytesPushed += totalPaddingSize;
       }
     }

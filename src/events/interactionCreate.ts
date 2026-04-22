@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ChatInputCommandInteraction, Events, MessageFlags } from "discord.js";
 import { lastChannelInteraction } from "../commands/utility/last-channel-interaction.js";
-import { ExtendedClient } from "../types/ExtendedClient.js";
 import { buildEmbed } from "../commands/utility/messages.js";
-import { logger } from "../utils/logger.js"
+import { ExtendedClient } from "../types/ExtendedClient.js";
+import { logger } from "../utils/logger.js";
 
 const name = Events.InteractionCreate;
 async function execute(interaction: ChatInputCommandInteraction) {

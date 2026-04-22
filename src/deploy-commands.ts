@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "./types/Command.js";
-import { logger } from "./utils/logger.js"
+import { logger } from "./utils/logger.js";
 
 const commands: Command[] = [];
 const __filename = fileURLToPath(import.meta.url);

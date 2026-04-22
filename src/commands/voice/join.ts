@@ -1,26 +1,32 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // TODO: clean imports after finish
-import { entersState, getVoiceConnection, joinVoiceChannel, VoiceConnectionState, VoiceConnection, VoiceConnectionStatus } from "@discordjs/voice";
-import { ChatInputCommandInteraction, GuildMember, SlashCommandBuilder, MessageFlags } from "discord.js";
+import {
+  entersState,
+  getVoiceConnection,
+  joinVoiceChannel,
+  VoiceConnection,
+  VoiceConnectionState,
+  VoiceConnectionStatus,
+} from "@discordjs/voice";
+import { ChatInputCommandInteraction, GuildMember, MessageFlags, SlashCommandBuilder } from "discord.js";
+import { logger } from "../../utils/logger.js";
 import { cleanUpProcess } from "../utility/cleanup.js";
-import { recordings } from "../utility/recordings.js";
-import { setGuildState, getGuildState } from "../utility/last-channel-interaction.js";
-import { logger } from "../../utils/logger.js"
+import { getGuildState, setGuildState } from "../utility/last-channel-interaction.js";
 import { buildEmbed } from "../utility/messages.js";
-
+import { recordings } from "../utility/recordings.js";
 
 const data = new SlashCommandBuilder().setName("join").setDescription(
   "Allows the bot to join the same channel as the user.",
 );
 
 async function handleConnectionStateChange(
-  oldState: VoiceConnectionState, 
+  oldState: VoiceConnectionState,
   newState: VoiceConnectionState,
   connection: VoiceConnection,
-  interaction: ChatInputCommandInteraction
+  interaction: ChatInputCommandInteraction,
 ) {
   // the issue with listening for "disconnected" states is that sometimes discord moves
-  // the bot to one of their other servers, resulting in a "disconnected" state but 
+  // the bot to one of their other servers, resulting in a "disconnected" state but
   // is actually rerouting the connection to a different place.
 
   // instead of destroying the connection for every single time the discord servers migrate us,
@@ -42,7 +48,7 @@ async function handleConnectionStateChange(
   }
 
   if (newState.status === VoiceConnectionStatus.Destroyed) {
-    const guildId = interaction.guildId!
+    const guildId = interaction.guildId!;
     const state = getGuildState(guildId);
 
     const textChannelId = state?.lastTextChannelId ?? interaction.channelId;
@@ -53,13 +59,12 @@ async function handleConnectionStateChange(
   }
 }
 
-
 async function execute(interaction: ChatInputCommandInteraction) {
   // if user tries to use the command in a DM (how)
   if (!interaction.inCachedGuild()) {
-    await interaction.reply({ 
+    await interaction.reply({
       embeds: [buildEmbed("Use this bot in discord servers only!", 0xFF0000)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -69,18 +74,23 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
   // if user is not in a voice channel
   if (!voiceObj.channel) {
-    await interaction.reply({ 
+    await interaction.reply({
       embeds: [buildEmbed("Join a voice channel and try again!", 0xFF0000)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
   // if there is a different recording going on in the same server
   if (recordings.get(guildId)?.length) {
-    return interaction.reply({ 
-      embeds: [buildEmbed("Recording in progress in another voice channel! You are not able to use /join at this time.", 0xFF0000)],
-      flags: MessageFlags.Ephemeral
+    return interaction.reply({
+      embeds: [
+        buildEmbed(
+          "Recording in progress in another voice channel! You are not able to use /join at this time.",
+          0xFF0000,
+        ),
+      ],
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -104,7 +114,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
   setGuildState(interaction.guildId, {
     lastVoiceChannelId: voiceObj.channel.id,
     lastTextChannelId: interaction.channelId,
-    client: interaction.client
+    client: interaction.client,
   });
 
   // LISTEN FOR DISCONNECTED/DESTROYED CONNECTIONS
@@ -113,8 +123,8 @@ async function execute(interaction: ChatInputCommandInteraction) {
   });
 
   logger.info(`joined ${voiceObj.channel.name}, id: ${voiceObj.channelId}`);
-  await interaction.reply({ 
-    embeds: [buildEmbed(`Joined ${voiceObj.channel.name}`, 0x3399FF)] 
+  await interaction.reply({
+    embeds: [buildEmbed(`Joined ${voiceObj.channel.name}`, 0x3399FF)],
   });
 }
 

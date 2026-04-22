@@ -1,38 +1,34 @@
-import { Client, TextChannel, EmbedBuilder } from "discord.js";
-import { lastChannelInteraction } from "./last-channel-interaction.js";
+import { Client, EmbedBuilder, TextChannel } from "discord.js";
 import { logger } from "../../utils/logger.js";
+import { lastChannelInteraction } from "./last-channel-interaction.js";
 import { data } from "./user.js";
 
 // SEND MESSAGE (not replies)
 export async function sendMessage(client: Client, channelId: string, msg: string) {
-
   const channel = await client.channels.fetch(channelId);
-    if (!channel || !channel?.isTextBased()) {
-      logger.error(`Error using sendMessage:`);
-      logger.error(`Channel not text-based/channel not found`);
-      return;
-    }
+  if (!channel || !channel?.isTextBased()) {
+    logger.error(`Error using sendMessage:`);
+    logger.error(`Channel not text-based/channel not found`);
+    return;
+  }
 
   const textChannel = channel as TextChannel;
-  
 
   // TODO: pass argument that switches if statement to embed or regular
   // but idk if we really need regular messages at all...
   // will change the replies to ephemeral embeds soon(?)
-  
-  if (false) { 
+
+  if (false) {
     // send regular message
     textChannel.sendTyping();
-    await textChannel.send({ 
-      content: msg
+    await textChannel.send({
+      content: msg,
     });
     return;
-  }
-
-  else {
+  } else {
     // embedded message
 
-    //build embed
+    // build embed
     const embed = new EmbedBuilder();
     embed.setURL("http://frags.ayayrom.cfd");
     embed.setTitle("FragComms"); // setAuthor instead?
@@ -44,10 +40,8 @@ export async function sendMessage(client: Client, channelId: string, msg: string
     // send embed
     textChannel.sendTyping();
     await textChannel.send({
-       embeds: [embed], 
-      });
-    
-
+      embeds: [embed],
+    });
   }
 }
 
@@ -67,4 +61,3 @@ export function buildEmbed(description: string, hexColor: number) {
 // 0xFACC15 T orange-yellow (from ReplayPage scoreboard, converted to hex)
 // 0x90EE90 Light green (for success messages and such)
 // 0xFF0000 Red (for error messages etc)
-

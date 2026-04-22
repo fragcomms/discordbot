@@ -14,7 +14,6 @@ import fs from "fs/promises";
 import { stringify } from "node:querystring";
 import { logger } from "../../utils/logger.js";
 
-
 /**
  * decided to refactor the code - aaron
  * wanted to make it cleaner considering we had SCP
@@ -234,27 +233,24 @@ export class RecordingSessionManager {
     }
   }
 
-  //recursive cleanup of all files in local directory (keep subfolders intact)
+  // recursive cleanup of all files in local directory (keep subfolders intact)
   private async cleanupLocalFiles(localDir: string) {
     try {
-      const entries = await fs.readdir(localDir, {withFileTypes: true});
+      const entries = await fs.readdir(localDir, { withFileTypes: true });
       for (const entry of entries) {
         const fullPath = path.join(localDir, entry.name);
-        if (entry.isDirectory()) { //remove folder and subfolders
-          await fs.rm(fullPath, {recursive: true, force:true});
+        if (entry.isDirectory()) { // remove folder and subfolders
+          await fs.rm(fullPath, { recursive: true, force: true });
           logger.info(`Cleaned up local folder ${fullPath}`);
-        }
-        else if (entry.isFile()) {
+        } else if (entry.isFile()) {
           await fs.unlink(fullPath); // remove files
           logger.info(`Cleaned up local file ${fullPath}`);
         }
       }
       logger.info(`Finished cleanup of all files and subfolders for ${localDir}`);
-    }
-    catch(e) {
+    } catch (e) {
       console.error("Failed to clean up local files:", e);
     }
-    
   }
 }
 
@@ -276,7 +272,3 @@ export async function cleanUpProcess(
 3. SEND MESSAGE
 
 */
-
-
-
-

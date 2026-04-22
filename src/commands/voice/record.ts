@@ -26,9 +26,9 @@ import ffmpeg from "ffmpeg-static";
 // import { UDPIntegrityMonitor } from "../../monitor/upd_integrity_monitor.js";
 // import { Transform, TransformCallback } from 'node:stream';
 import { pipeline } from "node:stream/promises";
-import { PCMSilencePadder } from "../utility/pcm-padder.js";
-import { logger } from "../../utils/logger.js"
+import { logger } from "../../utils/logger.js";
 import { buildEmbed } from "../utility/messages.js";
+import { PCMSilencePadder } from "../utility/pcm-padder.js";
 
 const ffmpegPath = ffmpeg as unknown as string;
 
@@ -147,57 +147,60 @@ async function createListeningStream(
 async function execute(interaction: ChatInputCommandInteraction) {
   // check if interaction is in guild
   if (!interaction.inCachedGuild()) {
-    await interaction.reply({ 
+    await interaction.reply({
       embeds: [buildEmbed("Use this bot in discord servers only!", 0xFF0000)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
   // check if bot is in voice channel
   if (!interaction.guild.members.me?.voice.channel) {
-    await interaction.reply({ 
+    await interaction.reply({
       embeds: [buildEmbed("I am not in a voice channel!", 0xFF0000)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
   // check if user is in voice channel
   if (!interaction.member.voice.channel) {
-    await interaction.reply({ 
+    await interaction.reply({
       embeds: [buildEmbed("You are not in a voice channel!", 0xFF0000)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
   // check if user is in same voice channel as bot
   if (interaction.member.voice.channel.id !== interaction.guild.members.me.voice.channel.id) {
-    await interaction.reply({ 
+    await interaction.reply({
       embeds: [buildEmbed("You must be in the same voice channel as me to use this command!", 0xFF0000)],
-      flags: MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
   // check if recording already in progress in this guild
   const guildRecordings = recordings.get(interaction.guildId!); // for this guild
   if (guildRecordings && guildRecordings.length > 0) { // if recordings in progress
-    await interaction.reply({ 
-      embeds: [buildEmbed("Recording already in progress.\nPlease stop current recording before starting another one.", 0xFF0000)],
-      flags: MessageFlags.Ephemeral
+    await interaction.reply({
+      embeds: [
+        buildEmbed(
+          "Recording already in progress.\nPlease stop current recording before starting another one.",
+          0xFF0000,
+        ),
+      ],
+      flags: MessageFlags.Ephemeral,
     });
 
     return;
   }
 
-  
   // grab all users that were given in command
   const userOptionNames = Array.from({ length: 6 }, (_, i) => `user${i + 1}`);
   const users = userOptionNames
     .map(name => interaction.options.getUser(name))
     .filter((u): u is import("discord.js").User => u !== null);
 
-  
-  await interaction.reply({ 
-    embeds: [buildEmbed(`Recording users: \n${users.map(u => `<@${u.id}>`).join(",\n")}`, 0xFACC15)] // T yellow for "in progress"
+  await interaction.reply({
+    embeds: [buildEmbed(`Recording users: \n${users.map(u => `<@${u.id}>`).join(",\n")}`, 0xFACC15)], // T yellow for "in progress"
   });
 
   const connection = getVoiceConnection(interaction.guildId)!;

@@ -19,8 +19,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as prism from "prism-media";
 import { logRecordings, Recording, recordings } from "../utility/recordings.js";
-// import { spawn, exec } from 'child_process'
-import ffmpeg from "ffmpeg-static";
+import { spawn } from 'child_process'
+// import ffmpeg from "ffmpeg-static";
 // import { OpusStream } from 'prism-media/typings/opus.js';
 // import { Channel, channel } from 'node:diagnostics_channel';
 // import { UDPIntegrityMonitor } from "../../monitor/upd_integrity_monitor.js";
@@ -29,8 +29,11 @@ import { pipeline } from "node:stream/promises";
 import { logger } from "../../utils/logger.js";
 import { buildEmbed } from "../utility/messages.js";
 import { PCMSilencePadder } from "../utility/pcm-padder.js";
+import { Writable } from 'node:stream';
 
-const ffmpegPath = ffmpeg as unknown as string;
+// const ffmpegPath = ffmpeg as unknown as string;
+
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,21 +95,33 @@ async function createListeningStream(
 
   const decoder = new prism.opus.Decoder({
     rate: 48000,
-    channels: 2,
+    channels: 1,
     frameSize: 960,
   });
 
   const dataDir = path.join(process.cwd(), "data", guildId, channelId, user.id);
   fs.mkdirSync(dataDir, { recursive: true });
 
-  const filePath = path.join(dataDir, `${filePrefix}.pcm`);
-  const outputStream = fs.createWriteStream(filePath);
+  const filePath = path.join(dataDir, `${filePrefix}.ogg`);
+  // const outputStream = fs.createWriteStream(filePath);
 
-  const silencePadder = new PCMSilencePadder(commandStartTime);
+  const ffmpegProcess = spawn('ffmpeg', [
+    '-f', 's16le',
+    '-ar', '48000',
+    '-ac', '1',
+    '-i', 'pipe:0',
+    '-c:a', 'libopus',
+    '-b:a', '24k',
+    '-vbr', 'on',
+    '-y',
+    filePath
+  ]);
 
   opusStream.on("error", (error) => {
     console.error(`[AudioStream Error - ${user.username}]:`, error.message);
   });
+
+  const silencePadder = new PCMSilencePadder(commandStartTime);
 
   // opusStream.on("data", (chunk: Buffer) => {
   //   udpMonitor.createMonitoredPacket(chunk);
@@ -117,7 +132,7 @@ async function createListeningStream(
     opusStream,
     decoder,
     silencePadder,
-    outputStream,
+    ffmpegProcess.stdin
   ).catch((err) => {
     if (err.code === "ERR_STREAM_PREMATURE_CLOSE") {
       logger.info(`Recording successfully stopped for ${user.username}`);
@@ -129,7 +144,9 @@ async function createListeningStream(
   const rec: Recording = {
     opusStream,
     decoder,
-    outputStream,
+    padder: silencePadder,
+    outputStream: ffmpegProcess.stdin,
+    ffmpegProcess: ffmpegProcess,
     filePath,
     user,
     timestamp: startIso,

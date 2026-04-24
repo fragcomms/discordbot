@@ -2,15 +2,19 @@
 // NOT A SLASH COMMAND, IT HOLDS THE recording object that /record and /stop-recording use
 import { AudioReceiveStream } from "@discordjs/voice";
 import { User } from "discord.js";
-import * as fs from "node:fs";
+// import * as fs from "node:fs";
 import * as prism from "prism-media";
 import { logger } from "../../utils/logger.js";
+import { Writable, Transform } from "node:stream";
+import { ChildProcess } from "node:child_process";
 // import { OpusStream } from 'prism-media/typings/opus.js'
 
 export interface Recording {
   opusStream: AudioReceiveStream;
   decoder: prism.opus.Decoder;
-  outputStream: fs.WriteStream;
+  padder: Transform;
+  outputStream: Writable;
+  ffmpegProcess: ChildProcess;
   filePath: string; // filePath
   user: User; // User object
   timestamp: string;

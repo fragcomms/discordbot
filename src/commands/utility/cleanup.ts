@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import { Client as SCPClient } from "node-scp";
 import path from "node:path";
 import { Pool as PGPool } from "pg";
-import { convertMultiplePcmToMka } from "./audio-conversion.js";
+import { convertMultipleOggToMka } from "./audio-conversion.js";
 import { sendMessage } from "./messages.js";
 import { Recording, recordings } from "./recordings.js";
 dotenv.config();
@@ -159,25 +159,26 @@ export class RecordingSessionManager {
     const closePromises = guildRecordings.map((recording) => {
       return new Promise<void>((resolve) => {
         try {
+
+          //waits for ffmpeg to exit gracefully
+          recording.ffmpegProcess.once("close", () => {
+            logger.info(`[Cleanup] Successfully saved file for ${recording.user.username}`);
+            resolve();
+          });
+
+          // prevents hanging
+          recording.ffmpegProcess.once("error", (err) => {
+            console.error(`[Cleanup] FFmpeg error for ${recording.user.username}:`, err);
+            resolve(); 
+          });
+
           // Network and decoder streams can be destroyed forcefully
-          if (recording.decoder) recording.decoder.destroy();
-          if (recording.opusStream) recording.opusStream.destroy();
+          // if (recording.decoder) recording.decoder.destroy();
+          // if (recording.opusStream) recording.opusStream.destroy();
 
-          // File write streams MUST be ended gracefully to flush buffers
-          if (recording.outputStream) {
-            // Listen for when the file has completely finished writing to disk
-            recording.outputStream.once("finish", () => {
-              logger.info(`[Cleanup] Successfully saved file for ${recording.user.username}`);
-              resolve();
-            });
-
-            // Prevent hanging if a stream errors out during close
-            recording.outputStream.once("error", (err) => {
-              console.error(`[Cleanup] Stream error for ${recording.user.username}:`, err);
-              resolve(); 
-            });
-
-            // Gracefully close and flush the file stream
+          if (recording.padder) {
+            recording.padder.end(); 
+          } else if (recording.outputStream) {
             recording.outputStream.end();
           } else {
             resolve();
@@ -237,7 +238,7 @@ export class RecordingSessionManager {
     const filePrefix = Number(guildRecordings[0].filePrefix);
     const localDir = path.join(process.cwd(), "data", guildId, voiceChannelId);
     
-    const mkaPath = await convertMultiplePcmToMka(localDir, filePrefix);
+    const mkaPath = await convertMultipleOggToMka(localDir, filePrefix);
 
     sendMessage(client, channelId, `Compiled all user's recordings to one: ${mkaPath}`);
 

@@ -1,58 +1,33 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { exec, spawn } from "child_process";
-import { dir } from "console";
-import { User } from "discord.js";
-import ffmpegPath from "ffmpeg-static";
+// import { dir } from "console";
+// import { User } from "discord.js";
+// import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
 import path from "path";
 import { logger } from "../../utils/logger.js";
 
 // exportable function pcm -> wav
-export async function convertPcmToWav(user: User, filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const wavPath = filePath.replace(/\.pcm$/, ".wav");
-    const cmd = `"${ffmpegPath}" -f s16le -ar 48k -ac 2 -i "${filePath}" "${wavPath}"`;
+// export async function convertPcmToWav(user: User, filePath: string): Promise<string> {
+//   return new Promise((resolve, reject) => {
+//     const wavPath = filePath.replace(/\.pcm$/, ".wav");
+//     const cmd = `"${ffmpegPath}" -f s16le -ar 48k -ac 2 -i "${filePath}" "${wavPath}"`;
 
-    exec(cmd, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`FFmpeg failed for ${filePath}:`, stderr);
-        reject(error);
-        return;
-      }
+//     exec(cmd, (error, stdout, stderr) => {
+//       if (error) {
+//         console.error(`FFmpeg failed for ${filePath}:`, stderr);
+//         reject(error);
+//         return;
+//       }
 
-      logger.info(`Converted ${user}'s audio file to ${wavPath}`);
-      resolve(wavPath); // return the path of the wav file
-    });
-  });
-}
+//       logger.info(`Converted ${user}'s audio file to ${wavPath}`);
+//       resolve(wavPath); // return the path of the wav file
+//     });
+//   });
+// }
 
-// helper function for convertMultiplePcmToMka
-async function padPcmFile(filePath: string, targetSizeBytes: number): Promise<void> {
-  const stats = fs.statSync(filePath);
-  const currentSize = stats.size;
-
-  if (currentSize >= targetSizeBytes) {
-    return;
-  }
-
-  const paddingNeeded = targetSizeBytes - currentSize;
-  const chunkSize = 1024 * 1024 * 8; // 8mb
-  const silenceChunk = Buffer.alloc(chunkSize, 0); 
-  
-  const fd = fs.openSync(filePath, "a");
-  let remaining = paddingNeeded;
-
-  while (remaining > 0) {
-    const writeSize = Math.min(remaining, chunkSize);
-    fs.writeSync(fd, silenceChunk, 0, writeSize);
-    remaining -= writeSize;
-  }
-
-  fs.closeSync(fd);
-}
-
-export async function convertMultiplePcmToMka(guildDir: string, timestamp: number): Promise<string> {
-  const pcmFiles: string[] = [];
+export async function convertMultipleOggToMka(guildDir: string, timestamp: number): Promise<string> {
+  const audioFiles: string[] = [];
 
   // recursive func that discovers all pcm files
   function walk(dir: string) {
@@ -60,60 +35,55 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: numbe
       const filePath = path.join(dir, file);
       if (fs.statSync(filePath).isDirectory()) {
         walk(filePath);
-      } else if (filePath.includes(`${timestamp}.pcm`)) {
-        pcmFiles.push(filePath);
+      } else if (filePath.includes(`${timestamp}.ogg`)) {
+        audioFiles.push(filePath);
       }
     }
   }
   walk(guildDir);
 
-  if (pcmFiles.length === 0) {
-    throw new Error(`No .pcm files found for timestamp ${timestamp}`);
+  if (audioFiles.length === 0) {
+    throw new Error(`No .ogg files found for timestamp ${timestamp}`);
   }
 
   const outputPath = path.join(guildDir, `combined_${timestamp}.mka`);
   const ffmpegArgs: string[] = [];
 
-  // normalize length of all pcm files and set up args
-  let maxSize = 0;
-  for (const file of pcmFiles) {
-    ffmpegArgs.push("-f", "s16le", "-ar", "48k", "-ac", "2", "-i", file);
-    const size = fs.statSync(file).size;
-    if (size > maxSize) {
-      maxSize = size;
-    }
+  for (const file of audioFiles) {
+    ffmpegArgs.push("-i", file);
   }
-  for (const [index, value] of pcmFiles.entries()) {
-    await padPcmFile(value, maxSize);
-    
+
+  for (const [index, value] of audioFiles.entries()) {
     ffmpegArgs.push("-map", `${index}:a`);
-    ffmpegArgs.push(`-metadata:s:a:${index}`, `title=${path.basename(path.dirname(value))}`);
-    
-    ffmpegArgs.push(`-filter:a:${index}`, "dynaudnorm,highpass=f=200,lowpass=f=4000");
+    const userId = path.basename(path.dirname(value)); 
+    ffmpegArgs.push(`-metadata:s:a:${index}`, `title=${userId}`);
   }
+
+  // // normalize length of all pcm files and set up args
+  // let maxSize = 0;
+  // for (const file of pcmFiles) {
+  //   ffmpegArgs.push("-f", "s16le", "-ar", "48k", "-ac", "2", "-i", file);
+  //   const size = fs.statSync(file).size;
+  //   if (size > maxSize) {
+  //     maxSize = size;
+  //   }
+  // }
+  // for (const [index, value] of pcmFiles.entries()) {
+  //   await padPcmFile(value, maxSize);
+    
+  //   ffmpegArgs.push("-map", `${index}:a`);
+  //   ffmpegArgs.push(`-metadata:s:a:${index}`, `title=${path.basename(path.dirname(value))}`);
+    
+  //   // ffmpegArgs.push(`-filter:a:${index}`, "dynaudnorm,highpass=f=200,lowpass=f=4000");
+  // }
   ffmpegArgs.push(
-    "-c:a",
-    "libopus",
-    "-b:a",
-    "24k",
-    "-frame_duration",
-    "60",
-    "-compression_level",
-    "6",
-    "-vbr",
-    "on",
-    "-application",
-    "voip",
-    "-ac",
-    "1",
+    "-c:a", "copy",
+    "-y",
     outputPath,
   );
 
   return new Promise<string>((resolve, reject) => {
-    const ffmpeg = spawn(`${ffmpegPath}`, ffmpegArgs);
-    // ffmpeg.stderr.on('data', (data) => {
-    //   console.log(data.toString())
-    // })
+    const ffmpeg = spawn("ffmpeg", ffmpegArgs);
 
     ffmpeg.on("close", (code) => {
       if (code === 0) {

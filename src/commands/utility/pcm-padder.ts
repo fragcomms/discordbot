@@ -5,7 +5,7 @@ export class PCMSilencePadder extends Transform {
   private bytesPushed = 0;
 
   // 48kHz, 2-channel, 16-bit, 20ms = 3840 bytes per frame
-  private readonly BYTES_PER_FRAME = 3840;
+  private readonly BYTES_PER_FRAME = 1920;
   private readonly FRAME_DURATION_MS = 20;
   private readonly BYTES_PER_MS = this.BYTES_PER_FRAME / this.FRAME_DURATION_MS; // 192 bytes per ms
 
@@ -16,14 +16,9 @@ export class PCMSilencePadder extends Transform {
     this.commandStartTime = commandStartTime;
   }
 
-  _transform(chunk: Buffer, encoding: string, callback: TransformCallback) {
-    const now = performance.now();
-    const elapsedMs = now - this.commandStartTime;
-
-    // Based on total time elapsed, how many frames SHOULD we have processed?
+  private pushMissingSilence(targetTimeMs: number) {
+    const elapsedMs = targetTimeMs - this.commandStartTime;
     const expectedBytes = Math.floor(elapsedMs * this.BYTES_PER_MS);
-
-    // Are we behind the timeline?
     const missingBytes = expectedBytes - this.bytesPushed;
 
     if (missingBytes > 0) {
@@ -42,11 +37,24 @@ export class PCMSilencePadder extends Transform {
         this.bytesPushed += totalPaddingSize;
       }
     }
+  }
 
-    // Push the actual received chunk
+  _transform(chunk: Buffer, encoding: string, callback: TransformCallback) {
+    // 1. Pad up to the current moment before pushing new audio
+    this.pushMissingSilence(performance.now());
+
+    // 2. Push the actual audio chunk
     this.push(chunk);
     this.bytesPushed += chunk.length;
 
+    callback();
+  }
+
+  _flush(callback: TransformCallback) {
+    // 1. When the /stop-recording command ends this stream, pad EXACTLY to this current millisecond
+    this.pushMissingSilence(performance.now());
+    
+    // 2. Close out
     callback();
   }
 }

@@ -36,8 +36,19 @@ async function padPcmFile(filePath: string, targetSizeBytes: number): Promise<vo
   }
 
   const paddingNeeded = targetSizeBytes - currentSize;
-  const silenceBuffer = Buffer.alloc(paddingNeeded, 0); // basically flood the EOF with 0 until it reaches the target size
-  fs.appendFileSync(filePath, silenceBuffer);
+  const chunkSize = 1024 * 1024 * 8; // 8mb
+  const silenceChunk = Buffer.alloc(chunkSize, 0); 
+  
+  const fd = fs.openSync(filePath, "a");
+  let remaining = paddingNeeded;
+
+  while (remaining > 0) {
+    const writeSize = Math.min(remaining, chunkSize);
+    fs.writeSync(fd, silenceChunk, 0, writeSize);
+    remaining -= writeSize;
+  }
+
+  fs.closeSync(fd);
 }
 
 export async function convertMultiplePcmToMka(guildDir: string, timestamp: number): Promise<string> {
@@ -74,8 +85,11 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: numbe
   }
   for (const [index, value] of pcmFiles.entries()) {
     await padPcmFile(value, maxSize);
+    
     ffmpegArgs.push("-map", `${index}:a`);
     ffmpegArgs.push(`-metadata:s:a:${index}`, `title=${path.basename(path.dirname(value))}`);
+    
+    ffmpegArgs.push(`-filter:a:${index}`, "dynaudnorm,highpass=f=200,lowpass=f=4000");
   }
   ffmpegArgs.push(
     "-c:a",
@@ -88,8 +102,6 @@ export async function convertMultiplePcmToMka(guildDir: string, timestamp: numbe
     "6",
     "-vbr",
     "on",
-    "-af",
-    "dynaudnorm,highpass=f=200,lowpass=f=4000",
     "-application",
     "voip",
     "-ac",

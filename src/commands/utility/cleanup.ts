@@ -155,19 +155,43 @@ export class RecordingSessionManager {
   }
 
   // grabs all active recordings and destroys them
-  private stopActiveStreams(guildRecordings: Recording[], client: DiscordClient, channelId: string) {
-    for (const recording of guildRecordings) {
-      try {
-        // destroy all streams and decoders
-        if (recording.outputStream) recording.outputStream.destroy();
-        if (recording.decoder) recording.decoder.destroy();
-        if (recording.opusStream) recording.opusStream.destroy();
-        logger.info(`[Cleanup] Successfully destroyed streams for ${recording.user.username}`);
-      } catch (error) {
-        console.error(`[Cleanup] Error destroying streams for ${recording.user.username}:`, error);
-        sendMessage(client, channelId, `Could not stop recording for ${recording.user.username}:`);
-      }
-    }
+  private async stopActiveStreams(guildRecordings: Recording[], client: DiscordClient, channelId: string): Promise<void> {
+    const closePromises = guildRecordings.map((recording) => {
+      return new Promise<void>((resolve) => {
+        try {
+          // Network and decoder streams can be destroyed forcefully
+          if (recording.decoder) recording.decoder.destroy();
+          if (recording.opusStream) recording.opusStream.destroy();
+
+          // File write streams MUST be ended gracefully to flush buffers
+          if (recording.outputStream) {
+            // Listen for when the file has completely finished writing to disk
+            recording.outputStream.once("finish", () => {
+              logger.info(`[Cleanup] Successfully saved file for ${recording.user.username}`);
+              resolve();
+            });
+
+            // Prevent hanging if a stream errors out during close
+            recording.outputStream.once("error", (err) => {
+              console.error(`[Cleanup] Stream error for ${recording.user.username}:`, err);
+              resolve(); 
+            });
+
+            // Gracefully close and flush the file stream
+            recording.outputStream.end();
+          } else {
+            resolve();
+          }
+        } catch (error) {
+          console.error(`[Cleanup] Error stopping streams for ${recording.user.username}:`, error);
+          sendMessage(client, channelId, `Could not stop recording for ${recording.user.username}`);
+          resolve();
+        }
+      });
+    });
+
+    // Wait for ALL files to be safely fully written to disk
+    await Promise.all(closePromises);
   }
 
   // saves the recordings to database
@@ -205,25 +229,24 @@ export class RecordingSessionManager {
     const networkPing = connection?.ping.ws ?? client.ws.ping;
     logger.info(`[Network] Final Voice Ping for session: ${networkPing}ms`);
 
-    this.stopActiveStreams(guildRecordings, client, channelId);
+    await this.stopActiveStreams(guildRecordings, client, channelId);
+    
     recordings.delete(guildId);
-    await new Promise(resolve => setTimeout(resolve, 250));
-
-    // vars to help make it plug and play
+    
     const timestampIso = guildRecordings[0].timestamp;
     const filePrefix = Number(guildRecordings[0].filePrefix);
     const localDir = path.join(process.cwd(), "data", guildId, voiceChannelId);
-    const wavPath = await convertMultiplePcmToMka(localDir, filePrefix);
+    
+    const mkaPath = await convertMultiplePcmToMka(localDir, filePrefix);
 
-    sendMessage(client, channelId, `Compiled all user's recordings to one: ${wavPath}`);
+    sendMessage(client, channelId, `Compiled all user's recordings to one: ${mkaPath}`);
 
     // ex: /home/user/bigserverid/bigchannelid/timestamp
     const remoteDir = `${process.env.SCP_DIR}/${guildId}/${voiceChannelId}/${filePrefix}`;
     const remoteFileName = `audio.mka`;
-    // ex: /home/user/bigserverid/bigchannelid/timestamp/audio.mka
     const remoteFullPath = `${remoteDir}/${remoteFileName}`;
 
-    const uploadSuccess = await this.scp.transferAudio(wavPath, remoteDir, remoteFileName);
+    const uploadSuccess = await this.scp.transferAudio(mkaPath, remoteDir, remoteFileName);
 
     if (uploadSuccess) {
       await this.saveToDatabase(guildRecordings, remoteFullPath, timestampIso, networkPing);

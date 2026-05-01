@@ -127,7 +127,7 @@ async function createListeningStream(
   ]);
 
   opusStream.on("error", (error) => {
-    console.error(`[AudioStream Error - ${user.username}]:`, error.message);
+    logger.error(`[AudioStream Error - ${user.username}]:`, error.message);
   });
 
   const silencePadder = new PCMSilencePadder(commandStartTime);
@@ -147,7 +147,7 @@ async function createListeningStream(
       logger.info(`Recording successfully stopped for ${user.username}`);
       return;
     }
-    console.error(`Pipeline crashed for ${user.username}:`, err);
+    logger.error(`Pipeline crashed for ${user.username}:`, err);
   });
 
   const rec: Recording = {

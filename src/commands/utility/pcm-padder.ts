@@ -4,7 +4,7 @@ export class PCMSilencePadder extends Transform {
   private commandStartTime: number;
   private bytesPushed = 0;
 
-  // 48kHz, 2-channel, 16-bit, 20ms = 3840 bytes per frame
+  // 48kHz, 1-channel, 16-bit, 20ms = 1920 bytes per frame
   private readonly BYTES_PER_FRAME = 1920;
   private readonly FRAME_DURATION_MS = 20;
   private readonly BYTES_PER_MS = this.BYTES_PER_FRAME / this.FRAME_DURATION_MS; // 192 bytes per ms
@@ -16,7 +16,7 @@ export class PCMSilencePadder extends Transform {
     this.commandStartTime = commandStartTime;
   }
 
-  private pushMissingSilence(targetTimeMs: number) {
+  private async pushMissingSilence(targetTimeMs: number) {
     const elapsedMs = targetTimeMs - this.commandStartTime;
     const expectedBytes = Math.floor(elapsedMs * this.BYTES_PER_MS);
     const missingBytes = expectedBytes - this.bytesPushed;
@@ -30,8 +30,13 @@ export class PCMSilencePadder extends Transform {
 
         while (remainingPadding > 0) {
           const writeSize = Math.min(remainingPadding, this.SILENCE_TEMPLATE.length);
-          this.push(this.SILENCE_TEMPLATE.subarray(0, writeSize));
+          
+          const canKeepPushing = this.push(this.SILENCE_TEMPLATE.subarray(0, writeSize));
           remainingPadding -= writeSize;
+
+          if (!canKeepPushing && remainingPadding > 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+          }
         }
 
         this.bytesPushed += totalPaddingSize;
@@ -39,22 +44,26 @@ export class PCMSilencePadder extends Transform {
     }
   }
 
-  _transform(chunk: Buffer, encoding: string, callback: TransformCallback) {
-    // 1. Pad up to the current moment before pushing new audio
-    this.pushMissingSilence(performance.now());
+  async _transform(chunk: Buffer, encoding: string, callback: TransformCallback) {
+    try {
+      await this.pushMissingSilence(performance.now());
 
-    // 2. Push the actual audio chunk
-    this.push(chunk);
-    this.bytesPushed += chunk.length;
+      this.push(chunk);
+      this.bytesPushed += chunk.length;
 
-    callback();
+      callback();
+    } catch (error) {
+      callback(error as Error);
+    }
   }
 
-  _flush(callback: TransformCallback) {
-    // 1. When the /stop-recording command ends this stream, pad EXACTLY to this current millisecond
-    this.pushMissingSilence(performance.now());
-    
-    // 2. Close out
-    callback();
+  async _flush(callback: TransformCallback) {
+    try {
+      await this.pushMissingSilence(performance.now());
+      
+      callback();
+    } catch (error) {
+      callback(error as Error);
+    }
   }
 }

@@ -99,6 +99,15 @@ async function createListeningStream(
     frameSize: 960,
   });
 
+  const originalDecode = (decoder as any)._decode.bind(decoder);
+  (decoder as any)._decode = function(chunk: Buffer) {
+    try {
+      return originalDecode(chunk);
+    } catch (err) {
+      return Buffer.alloc(0);
+    }
+  };
+
   const dataDir = path.join(process.cwd(), "data", guildId, channelId, user.id);
   fs.mkdirSync(dataDir, { recursive: true });
 

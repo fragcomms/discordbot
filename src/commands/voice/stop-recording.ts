@@ -21,14 +21,25 @@ async function execute(interaction: ChatInputCommandInteraction) {
   const guildId = interaction.guildId!;
   const guildRecordings = recordings.get(guildId);
 
-  // TODO: check if user is in a channel that is currently recording
-  if (!interaction.member.voice.channel) {
+  // not in voice channel
+  const botVoiceChannel = interaction.guild.members.me?.voice.channel;
+  if (!botVoiceChannel) {
     await interaction.reply({
-      embeds: [buildEmbed("Join the specific voice channel to stop recording!", 0xFF0000)],
+      embeds: [buildEmbed("I am not currently in a voice channel.", 0xFF0000)],
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
+
+  // TODO: check if user is in a channel that is currently recording
+  if (interaction.member.voice.channel?.id !== botVoiceChannel.id) {
+    await interaction.reply({
+      embeds: [buildEmbed("You must be in the same voice channel as the bot to stop the recording!", 0xFF0000)],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  
   const channelId = interaction.channelId;
   const client = interaction.client;
 
@@ -45,7 +56,11 @@ async function execute(interaction: ChatInputCommandInteraction) {
   }); //
 
   // STOP AND PROCESS ALL ACTIVE RECORDINGS
-  cleanUpProcess(guildId, channelId, interaction.guild.members.me!.voice.channel!.id, client);
+  try {
+    await cleanUpProcess(guildId, channelId, botVoiceChannel.id, client);
+  } catch (error) {
+    logger.error(`Failed to execute cleanUpProcess for guild ${guildId}:`, error);
+  }
 }
 
 export { data, execute };

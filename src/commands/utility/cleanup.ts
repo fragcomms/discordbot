@@ -159,6 +159,11 @@ export class RecordingSessionManager {
     const closePromises = guildRecordings.map((recording) => {
       return new Promise<void>((resolve) => {
         try {
+          if (recording.ffmpegProcess.exitCode !== null || recording.ffmpegProcess.killed) {
+            logger.info(`[Cleanup] Process already finalized for ${recording.user.username}`);
+            resolve();
+            return;
+          }
 
           //waits for ffmpeg to exit gracefully
           recording.ffmpegProcess.once("close", () => {

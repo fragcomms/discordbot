@@ -35,7 +35,7 @@ export async function convertMultipleOggToMka(guildDir: string, timestamp: numbe
       const filePath = path.join(dir, file);
       if (fs.statSync(filePath).isDirectory()) {
         walk(filePath);
-      } else if (filePath.includes(`${timestamp}.ogg`)) {
+      } else if (filePath.endsWith(`${timestamp}.ogg`)) {
         audioFiles.push(filePath);
       }
     }

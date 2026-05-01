@@ -115,6 +115,7 @@ async function createListeningStream(
   // const outputStream = fs.createWriteStream(filePath);
 
   const ffmpegProcess = spawn('ffmpeg', [
+    '-loglevel', 'error',
     '-f', 's16le',
     '-ar', '48000',
     '-ac', '1',
@@ -126,8 +127,12 @@ async function createListeningStream(
     filePath
   ]);
 
+  ffmpegProcess.stderr.on("data", (chunk: Buffer) => {
+    logger.error(`[FFmpeg Error - ${user.username}]: ${chunk.toString()}`);
+  });
+
   opusStream.on("error", (error) => {
-    logger.error(`[AudioStream Error - ${user.username}]:`, error.message);
+    logger.error(`[AudioStream Error - ${user.username}]:`, error);
   });
 
   const silencePadder = new PCMSilencePadder(commandStartTime);

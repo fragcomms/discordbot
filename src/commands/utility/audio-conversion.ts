@@ -84,13 +84,24 @@ export async function convertMultipleOggToMka(guildDir: string, timestamp: numbe
 
   return new Promise<string>((resolve, reject) => {
     const ffmpeg = spawn("ffmpeg", ffmpegArgs);
+    let errorOutput = "";
+
+    ffmpeg.stderr.on("data", (data) => {
+      errorOutput += data.toString();
+    });
 
     ffmpeg.on("close", (code) => {
       if (code === 0) {
         resolve(outputPath);
       } else {
-        reject(new Error(`ffmpeg exited with code ${code}`));
+        logger.error(`FFmpeg Error Log: \n${errorOutput}`);
+        reject(new Error(`FFmpeg exited with code ${code}`));
       }
+    });
+    
+    ffmpeg.on("error", (err) => {
+      // logger.error("Failed to start FFmpeg process:", err);
+      reject(err);
     });
   });
 }
